@@ -20,16 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup mise
-        uses: jdx/mise-action@v2
+      - uses: mlugg/setup-zig@v2
         with:
-          cache: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build
-        run: zig build
+          version: 0.14.1
 
       - name: Build documentation
         run: zig build docs
