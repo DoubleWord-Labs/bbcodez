@@ -3,73 +3,28 @@
 //! This module provides the main Document type for parsing BBCode text into a tree structure
 //! that can be traversed and analyzed. The Document acts as the root of the parse tree.
 
-/// Opaque handle to the underlying C++ BBCode document implementation
-handle: *bbcpp.bbcpp_document_t,
-
-/// Creates a new BBCode document.
-///
-/// Returns a new empty Document ready to parse BBCode text.
-/// Call `deinit()` when done to free resources.
-///
-/// Returns: A new Document instance
-pub fn init() Error!Document {
-    if (bbcpp.bbcpp_document_create()) |handle| {
-        return Document{ .handle = handle };
-    } else {
-        return Error.NullPointer;
-    }
-}
+arena: std.heap.ArenaAllocator,
+root: Node = .{
+    .type = .document,
+    .value = .document,
+},
 
 /// Parses BBCode text and builds the internal tree structure.
 ///
-/// Takes a null-terminated BBCode string and parses it into a tree of nodes
+/// Takes a BBCode string and parses it into a tree of nodes
 /// that can be traversed using the document's methods or Walker.
 ///
 /// Args:
-///   bbcode: Null-terminated BBCode string to parse
-pub fn load(self: Document, bbcode: [:0]const u8) Error!void {
-    try errors.handleError(bbcpp.bbcpp_document_load(self.handle, @ptrCast(bbcode)));
+///   bbcode: BBCode string to parse
+pub fn load(allocator: Allocator, reader: std.io.AnyReader) !Document {
+    var tokens = try tokenizer.tokenize(allocator, reader);
+    defer tokens.deinit(allocator);
+    return try parser.parse(allocator, tokens);
 }
 
-pub fn parse(bbcode: [:0]const u8) Error!Document {
-    const document = try Document.init();
-    try document.load(bbcode);
-    return document;
-}
-
-/// Returns the number of top-level child nodes in the document.
-///
-/// After parsing BBCode text, this returns how many direct children
-/// the document root has. These are typically text nodes and BBCode elements.
-///
-/// Returns: Number of child nodes
-pub fn getChildrenCount(self: Document) Error!usize {
-    var count: usize = 0;
-    try errors.handleError(bbcpp.bbcpp_document_get_children_count(self.handle, &count));
-    return count;
-}
-
-/// Gets a child node at the specified index.
-///
-/// Retrieves a direct child of the document root by its index.
-/// Index must be less than the value returned by `getChildrenCount()`.
-///
-/// Args:
-///   index: Zero-based index of the child to retrieve
-/// Returns: The child Node at the given index
-pub fn getChild(self: Document, index: usize) Error!Node {
-    var node_handle: ?*bbcpp.bbcpp_node_t = null;
-    try errors.handleError(bbcpp.bbcpp_document_get_child(self.handle, index, @ptrCast(&node_handle)));
-    return Node{ .handle = node_handle.? };
-}
-
-/// Prints a debug representation of the document tree to standard output.
-///
-/// Outputs a formatted tree structure showing all nodes and their relationships.
-/// Useful for debugging and understanding the parsed structure.
-///
-pub fn print(self: Document) Error!void {
-    try errors.handleError(bbcpp.bbcpp_document_print(self.handle));
+pub fn loadFromBuffer(allocator: Allocator, bbcode: []const u8) !Document {
+    var fbs = std.io.fixedBufferStream(bbcode);
+    return try load(allocator, fbs.reader().any());
 }
 
 /// Frees resources associated with the document.
@@ -77,30 +32,31 @@ pub fn print(self: Document) Error!void {
 /// Must be called when done with the document to prevent memory leaks.
 /// After calling this, the document should not be used.
 pub fn deinit(self: Document) void {
-    bbcpp.bbcpp_document_destroy(self.handle);
+    self.arena.deinit();
 }
 
-pub fn walk(self: Document, allocator: Allocator) Error!Walker {
-    return Walker.init(self, allocator);
+pub fn walk(self: Document, allocator: Allocator, order: Walker.TraversalOrder) !Walker {
+    return Walker.init(self, allocator, order);
 }
 
 /// Tree walker for traversing all nodes in a document.
 ///
-/// Provides depth-first traversal of the entire document tree.
 /// Each call to `next()` returns the next node in traversal order.
 pub const Walker = struct {
     const TraversalFrame = struct {
         node: Node,
-        current_child_index: usize,
-        total_children: usize,
+        iterator: ?Node.Iterator = null,
     };
 
-    allocator: std.mem.Allocator,
+    const TraversalOrder = enum {
+        pre,
+        post,
+    };
+
+    allocator: Allocator,
     document: Document,
     stack: std.ArrayListUnmanaged(TraversalFrame),
-    document_child_index: usize,
-    document_children_count: usize,
-    started: bool,
+    order: TraversalOrder,
 
     /// Creates a new walker for the given document.
     ///
@@ -111,16 +67,20 @@ pub const Walker = struct {
     ///   document: The Document to traverse
     ///   allocator: Memory allocator for internal state
     /// Returns: A new Walker instance
-    pub fn init(document: Document, allocator: std.mem.Allocator) Error!Walker {
-        const children_count = try document.getChildrenCount();
-        return Walker{
+    pub fn init(document: Document, allocator: Allocator, order: TraversalOrder) !Walker {
+        var walker = Walker{
             .allocator = allocator,
             .document = document,
             .stack = .empty,
-            .document_child_index = 0,
-            .document_children_count = children_count,
-            .started = false,
+            .order = order,
         };
+
+        try walker.stack.append(allocator, .{
+            .node = document.root,
+            .iterator = document.root.iterator(),
+        });
+
+        return walker;
     }
 
     /// Frees resources associated with the walker.
@@ -137,61 +97,54 @@ pub const Walker = struct {
     /// top-level node, subsequent calls return child nodes depth-first.
     ///
     /// Returns: The next Node in traversal order, or null if finished
-    pub fn next(self: *Walker) Error!?Node {
-        // If we haven't started, initialize with the first document child
-        if (!self.started) {
-            self.started = true;
-            return self.getNextDocumentChild();
-        }
+    pub fn next(self: *Walker) !?Node {
+        return try switch (self.order) {
+            .pre => self.preOrderTraversal(),
+            .post => self.postOrderTraversal(),
+        };
+    }
 
-        // If stack is empty, get next document child
-        if (self.stack.items.len == 0) {
-            return self.getNextDocumentChild();
-        }
+    pub fn preOrderTraversal(self: *Walker) !?Node {
+        while (self.stack.items.len > 0) {
+            const frame = self.stack.pop() orelse return null;
+            const node = frame.node;
 
-        // Get current frame from top of stack
-        var current_frame = &self.stack.items[self.stack.items.len - 1];
+            var i = node.children.items.len;
+            while (i > 0) : (i -= 1) {
+                const child_node: Node = node.children.items[i - 1];
 
-        // If current node has unvisited children, go deeper
-        if (current_frame.current_child_index < current_frame.total_children) {
-            const child = try current_frame.node.getChild(current_frame.current_child_index);
-            current_frame.current_child_index += 1;
-
-            if (child) |child_node| {
-                const child_count = child_node.getChildrenCount() catch 0;
-                try self.stack.append(self.allocator, TraversalFrame{
+                try self.stack.append(self.allocator, .{
                     .node = child_node,
-                    .current_child_index = 0,
-                    .total_children = child_count,
                 });
-                return child_node;
-            } else {
-                // Skip null child and try next
-                return self.next();
+            }
+
+            return node;
+        }
+
+        return null;
+    }
+
+    pub fn postOrderTraversal(self: *Walker) !?Node {
+        while (self.stack.items.len > 0) {
+            var top = &self.stack.items[self.stack.items.len - 1];
+            var it = &(top.iterator orelse std.debug.panic("Iterator not initialized", .{}));
+
+            if (it.next()) |node| {
+                switch (node.type) {
+                    .element => {
+                        try self.stack.append(self.allocator, .{
+                            .node = node,
+                            .iterator = node.iterator(),
+                        });
+                    },
+                    else => return node,
+                }
+            } else if (self.stack.pop()) |item| {
+                return item.node;
             }
         }
 
-        // Current node is exhausted, backtrack
-        _ = self.stack.pop();
-        return self.next();
-    }
-
-    fn getNextDocumentChild(self: *Walker) Error!?Node {
-        if (self.document_child_index >= self.document_children_count) {
-            return null;
-        }
-
-        const child = try self.document.getChild(self.document_child_index);
-        self.document_child_index += 1;
-
-        const child_count = child.getChildrenCount() catch 0;
-        try self.stack.append(self.allocator, TraversalFrame{
-            .node = child,
-            .current_child_index = 0,
-            .total_children = child_count,
-        });
-
-        return child;
+        return null;
     }
 
     /// Resets the walker to start traversal from the beginning.
@@ -200,182 +153,12 @@ pub const Walker = struct {
     /// Useful for making multiple passes over the same document.
     pub fn reset(self: *Walker) void {
         self.stack.clearRetainingCapacity();
-        self.document_child_index = 0;
-        self.started = false;
     }
 };
 
-test Document {
-    const document = try Document.init();
-
-    try document.load("[b]Hello, World![/b]");
-
-    const children_count = try document.getChildrenCount();
-    _ = children_count;
-    // std.debug.print("Children count: {}\n", .{children_count});
-}
-
-test "Walker traversal" {
-    const allocator = std.testing.allocator;
-    const document = try Document.init();
-    defer document.deinit();
-
-    try document.load("Hello [b]bold[/b] and [i]italic[/i] text");
-
-    var walker = try Walker.init(document, allocator);
-    defer walker.deinit();
-
-    var content_buf: [64]u8 = undefined;
-    var node_count: usize = 0;
-
-    while (try walker.next()) |node| {
-        node_count += 1;
-        const node_type = try node.getType();
-        var name_buf: [256]u8 = undefined;
-        const name = try node.getName(&name_buf);
-        _ = name;
-
-        // std.debug.print("Node {}: Type = {}", .{ node_count, node_type });
-
-        switch (node_type) {
-            .text => {
-                if (node.getTextContent(&content_buf)) |content| {
-                    _ = content;
-                    // std.debug.print(", Text = '{s}'", .{content});
-                } else |_| {
-                    // std.debug.print(", Text = 'Error getting content'", .{});
-                }
-            },
-            .element => {
-                // std.debug.print(", Element = '{s}'", .{name});
-                const param_count = node.getParameterCount() catch 0;
-                if (param_count > 0) {
-                    // std.debug.print(" (params: {})", .{param_count});
-                }
-            },
-            else => {
-                // std.debug.print(", Name = '{s}'", .{name});
-            },
-        }
-        // std.debug.print("\n", .{});
-    }
-
-    // std.debug.print("Total nodes traversed: {}\n", .{node_count});
-    try std.testing.expect(node_count > 0);
-}
-
-test "elements" {
-    const bbcode_text =
-        \\[b]Hello, World![/b]
-    ;
-
-    const doc = try Document.parse(bbcode_text);
-    defer doc.deinit();
-
-    try testing.expectEqual(1, doc.getChildrenCount());
-
-    var buf: [64]u8 = undefined;
-
-    const elem_bold = try doc.getChild(0);
-    try testing.expectEqual(NodeType.element, try elem_bold.getType());
-    try testing.expectEqualStrings("b", try elem_bold.getName(&buf));
-    try testing.expectEqual(2, try elem_bold.getChildrenCount());
-
-    const text_node = try elem_bold.getChild(0) orelse @panic("Expected text node");
-    try testing.expectEqual(NodeType.text, try text_node.getType());
-    try testing.expectEqualStrings("Hello, World!", try text_node.getTextContent(&buf));
-    try testing.expectEqual(0, try text_node.getChildrenCount());
-
-    const elem_bold_end = try elem_bold.getChild(1) orelse @panic("Expected closing element");
-    try testing.expectEqual(NodeType.element, try elem_bold_end.getType());
-    try testing.expectEqualStrings("b", try elem_bold_end.getName(&buf));
-    try testing.expectEqual(0, try elem_bold_end.getChildrenCount());
-}
-
-test "parameters" {
-    var buf: [64]u8 = undefined;
-
-    {
-        const doc = try Document.parse("[color=red]Red[/color]");
-        defer doc.deinit();
-
-        const elem_color = try doc.getChild(0);
-        try testing.expectEqual(NodeType.element, try elem_color.getType());
-        try testing.expectEqualStrings("color", try elem_color.getName(&buf));
-        try testing.expectEqual(2, try elem_color.getChildrenCount());
-        try testing.expectEqual(1, try elem_color.getParameterCount());
-
-        const elem_color_param = try elem_color.getParameterByIndex(0, testing.allocator);
-        defer elem_color_param.deinit(testing.allocator);
-        try testing.expectEqualStrings("red", elem_color_param.value);
-
-        const text_node = try elem_color.getChild(0) orelse @panic("Expected text node");
-        try testing.expectEqual(NodeType.text, try text_node.getType());
-        try testing.expectEqualStrings("Red", try text_node.getTextContent(&buf));
-
-        const elem_color_end = try elem_color.getChild(1) orelse @panic("Expected closing element");
-        try testing.expectEqual(NodeType.element, try elem_color_end.getType());
-        try testing.expectEqualStrings("color", try elem_color_end.getName(&buf));
-        try testing.expectEqual(0, try elem_color_end.getChildrenCount());
-    }
-
-    {
-        const doc = try Document.parse("[url=https://example.com]Example[/url]");
-        defer doc.deinit();
-
-        const url_elem = try doc.getChild(0);
-        try testing.expectEqual(NodeType.element, try url_elem.getType());
-        try testing.expectEqualStrings("url", try url_elem.getName(&buf));
-        try testing.expectEqual(2, try url_elem.getChildrenCount());
-        try testing.expectEqual(1, try url_elem.getParameterCount());
-
-        const url_param = try url_elem.getParameterByIndex(0, testing.allocator);
-        defer url_param.deinit(testing.allocator);
-        try testing.expectEqualStrings("https://example.com", url_param.value);
-
-        const text_node = try url_elem.getChild(0) orelse @panic("Expected text node");
-        try testing.expectEqual(NodeType.text, try text_node.getType());
-        try testing.expectEqualStrings("Example", try text_node.getTextContent(&buf));
-
-        const elem_url_end = try url_elem.getChild(1) orelse @panic("Expected closing element");
-        try testing.expectEqual(NodeType.element, try elem_url_end.getType());
-        try testing.expectEqualStrings("url", try elem_url_end.getName(&buf));
-        try testing.expectEqual(0, try elem_url_end.getChildrenCount());
-    }
-
-    {
-        const doc = try Document.parse("[email=example@example.com]Email[/email]");
-        defer doc.deinit();
-
-        const email_elem = try doc.getChild(0);
-        try testing.expectEqual(NodeType.element, try email_elem.getType());
-        try testing.expectEqualStrings("email", try email_elem.getName(&buf));
-        try testing.expectEqual(2, try email_elem.getChildrenCount());
-        try testing.expectEqual(1, try email_elem.getParameterCount());
-
-        const email_param = try email_elem.getParameterByIndex(0, testing.allocator);
-        defer email_param.deinit(testing.allocator);
-        try testing.expectEqualStrings("example@example.com", email_param.value);
-
-        const text_node = try email_elem.getChild(0) orelse @panic("Expected email text node");
-        try testing.expectEqual(NodeType.text, try text_node.getType());
-        try testing.expectEqualStrings("Email", try text_node.getTextContent(&buf));
-
-        const elem_email_end = try email_elem.getChild(1) orelse @panic("Expected email end element");
-        try testing.expectEqual(NodeType.element, try elem_email_end.getType());
-        try testing.expectEqualStrings("email", try elem_email_end.getName(&buf));
-        try testing.expectEqual(0, try elem_email_end.getChildrenCount());
-    }
-}
-
 const std = @import("std");
-const testing = std.testing;
-const errors = @import("errors.zig");
-const bbcpp = @import("bbcpp");
 const Document = @This();
 const Node = @import("Node.zig");
-const Error = errors.Error;
 const Allocator = std.mem.Allocator;
-const enums = @import("enums.zig");
-const NodeType = enums.NodeType;
-const ElementType = enums.ElementType;
+const parser = @import("parser.zig");
+const tokenizer = @import("tokenizer.zig");
