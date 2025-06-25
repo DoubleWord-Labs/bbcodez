@@ -3,10 +3,6 @@
 //! This module provides the main Document type for parsing BBCode text into a tree structure
 //! that can be traversed and analyzed. The Document acts as the root of the parse tree.
 
-const Document = @This();
-const Node = @import("Node.zig");
-const Error = errors.Error;
-
 /// Opaque handle to the underlying C++ BBCode document implementation
 handle: *bbcpp.bbcpp_document_t,
 
@@ -16,7 +12,6 @@ handle: *bbcpp.bbcpp_document_t,
 /// Call `deinit()` when done to free resources.
 ///
 /// Returns: A new Document instance
-/// Errors: NullPointer if document creation fails
 pub fn init() Error!Document {
     if (bbcpp.bbcpp_document_create()) |handle| {
         return Document{ .handle = handle };
@@ -32,9 +27,14 @@ pub fn init() Error!Document {
 ///
 /// Args:
 ///   bbcode: Null-terminated BBCode string to parse
-/// Errors: ParseError if the BBCode is malformed, NullPointer if input is null
 pub fn load(self: Document, bbcode: [:0]const u8) Error!void {
     try errors.handleError(bbcpp.bbcpp_document_load(self.handle, @ptrCast(bbcode)));
+}
+
+pub fn parse(bbcode: [:0]const u8) Error!Document {
+    const document = try Document.init();
+    try document.load(bbcode);
+    return document;
 }
 
 /// Returns the number of top-level child nodes in the document.
@@ -43,7 +43,6 @@ pub fn load(self: Document, bbcode: [:0]const u8) Error!void {
 /// the document root has. These are typically text nodes and BBCode elements.
 ///
 /// Returns: Number of child nodes
-/// Errors: InvalidArgument if document is invalid
 pub fn getChildrenCount(self: Document) Error!usize {
     var count: usize = 0;
     try errors.handleError(bbcpp.bbcpp_document_get_children_count(self.handle, &count));
@@ -58,7 +57,6 @@ pub fn getChildrenCount(self: Document) Error!usize {
 /// Args:
 ///   index: Zero-based index of the child to retrieve
 /// Returns: The child Node at the given index
-/// Errors: InvalidArgument if index is out of bounds
 pub fn getChild(self: Document, index: usize) Error!Node {
     var node_handle: ?*bbcpp.bbcpp_node_t = null;
     try errors.handleError(bbcpp.bbcpp_document_get_child(self.handle, index, @ptrCast(&node_handle)));
@@ -70,7 +68,6 @@ pub fn getChild(self: Document, index: usize) Error!Node {
 /// Outputs a formatted tree structure showing all nodes and their relationships.
 /// Useful for debugging and understanding the parsed structure.
 ///
-/// Errors: InvalidArgument if document is invalid
 pub fn print(self: Document) Error!void {
     try errors.handleError(bbcpp.bbcpp_document_print(self.handle));
 }
@@ -81,6 +78,10 @@ pub fn print(self: Document) Error!void {
 /// After calling this, the document should not be used.
 pub fn deinit(self: Document) void {
     bbcpp.bbcpp_document_destroy(self.handle);
+}
+
+pub fn walk(self: Document, allocator: Allocator) Error!Walker {
+    return Walker.init(self, allocator);
 }
 
 /// Tree walker for traversing all nodes in a document.
@@ -110,7 +111,6 @@ pub const Walker = struct {
     ///   document: The Document to traverse
     ///   allocator: Memory allocator for internal state
     /// Returns: A new Walker instance
-    /// Errors: OutOfMemory if allocation fails, InvalidArgument if document is invalid
     pub fn init(document: Document, allocator: std.mem.Allocator) Error!Walker {
         const children_count = try document.getChildrenCount();
         return Walker{
@@ -137,7 +137,6 @@ pub const Walker = struct {
     /// top-level node, subsequent calls return child nodes depth-first.
     ///
     /// Returns: The next Node in traversal order, or null if finished
-    /// Errors: OutOfMemory if stack allocation fails, InvalidArgument for invalid nodes
     pub fn next(self: *Walker) Error!?Node {
         // If we haven't started, initialize with the first document child
         if (!self.started) {
@@ -155,13 +154,7 @@ pub const Walker = struct {
 
         // If current node has unvisited children, go deeper
         if (current_frame.current_child_index < current_frame.total_children) {
-            const child = current_frame.node.getChild(current_frame.current_child_index) catch |err| switch (err) {
-                Error.NotFound => {
-                    current_frame.current_child_index += 1;
-                    return self.next();
-                },
-                else => return err,
-            };
+            const child = try current_frame.node.getChild(current_frame.current_child_index);
             current_frame.current_child_index += 1;
 
             if (child) |child_node| {
@@ -212,17 +205,14 @@ pub const Walker = struct {
     }
 };
 
-const errors = @import("errors.zig");
-const bbcpp = @import("bbcpp");
-const std = @import("std");
-
 test Document {
     const document = try Document.init();
 
     try document.load("[b]Hello, World![/b]");
 
     const children_count = try document.getChildrenCount();
-    std.debug.print("Children count: {}\n", .{children_count});
+    _ = children_count;
+    // std.debug.print("Children count: {}\n", .{children_count});
 }
 
 test "Walker traversal" {
@@ -241,32 +231,151 @@ test "Walker traversal" {
     while (try walker.next()) |node| {
         node_count += 1;
         const node_type = try node.getType();
-        const name = try node.getName();
+        var name_buf: [256]u8 = undefined;
+        const name = try node.getName(&name_buf);
+        _ = name;
 
-        std.debug.print("Node {}: Type = {}", .{ node_count, node_type });
+        // std.debug.print("Node {}: Type = {}", .{ node_count, node_type });
 
         switch (node_type) {
             .text => {
                 if (node.getTextContent(&content_buf)) |content| {
-                    std.debug.print(", Text = '{s}'", .{content});
+                    _ = content;
+                    // std.debug.print(", Text = '{s}'", .{content});
                 } else |_| {
-                    std.debug.print(", Text = 'Error getting content'", .{});
+                    // std.debug.print(", Text = 'Error getting content'", .{});
                 }
             },
             .element => {
-                std.debug.print(", Element = '{s}'", .{name});
+                // std.debug.print(", Element = '{s}'", .{name});
                 const param_count = node.getParameterCount() catch 0;
                 if (param_count > 0) {
-                    std.debug.print(" (params: {})", .{param_count});
+                    // std.debug.print(" (params: {})", .{param_count});
                 }
             },
             else => {
-                std.debug.print(", Name = '{s}'", .{name});
+                // std.debug.print(", Name = '{s}'", .{name});
             },
         }
-        std.debug.print("\n", .{});
+        // std.debug.print("\n", .{});
     }
 
-    std.debug.print("Total nodes traversed: {}\n", .{node_count});
+    // std.debug.print("Total nodes traversed: {}\n", .{node_count});
     try std.testing.expect(node_count > 0);
 }
+
+test "elements" {
+    const bbcode_text =
+        \\[b]Hello, World![/b]
+    ;
+
+    const doc = try Document.parse(bbcode_text);
+    defer doc.deinit();
+
+    try testing.expectEqual(1, doc.getChildrenCount());
+
+    var buf: [64]u8 = undefined;
+
+    const elem_bold = try doc.getChild(0);
+    try testing.expectEqual(NodeType.element, try elem_bold.getType());
+    try testing.expectEqualStrings("b", try elem_bold.getName(&buf));
+    try testing.expectEqual(2, try elem_bold.getChildrenCount());
+
+    const text_node = try elem_bold.getChild(0) orelse @panic("Expected text node");
+    try testing.expectEqual(NodeType.text, try text_node.getType());
+    try testing.expectEqualStrings("Hello, World!", try text_node.getTextContent(&buf));
+    try testing.expectEqual(0, try text_node.getChildrenCount());
+
+    const elem_bold_end = try elem_bold.getChild(1) orelse @panic("Expected closing element");
+    try testing.expectEqual(NodeType.element, try elem_bold_end.getType());
+    try testing.expectEqualStrings("b", try elem_bold_end.getName(&buf));
+    try testing.expectEqual(0, try elem_bold_end.getChildrenCount());
+}
+
+test "parameters" {
+    var buf: [64]u8 = undefined;
+
+    {
+        const doc = try Document.parse("[color=red]Red[/color]");
+        defer doc.deinit();
+
+        const elem_color = try doc.getChild(0);
+        try testing.expectEqual(NodeType.element, try elem_color.getType());
+        try testing.expectEqualStrings("color", try elem_color.getName(&buf));
+        try testing.expectEqual(2, try elem_color.getChildrenCount());
+        try testing.expectEqual(1, try elem_color.getParameterCount());
+
+        const elem_color_param = try elem_color.getParameterByIndex(0, testing.allocator);
+        defer elem_color_param.deinit(testing.allocator);
+        try testing.expectEqualStrings("red", elem_color_param.value);
+
+        const text_node = try elem_color.getChild(0) orelse @panic("Expected text node");
+        try testing.expectEqual(NodeType.text, try text_node.getType());
+        try testing.expectEqualStrings("Red", try text_node.getTextContent(&buf));
+
+        const elem_color_end = try elem_color.getChild(1) orelse @panic("Expected closing element");
+        try testing.expectEqual(NodeType.element, try elem_color_end.getType());
+        try testing.expectEqualStrings("color", try elem_color_end.getName(&buf));
+        try testing.expectEqual(0, try elem_color_end.getChildrenCount());
+    }
+
+    {
+        const doc = try Document.parse("[url=https://example.com]Example[/url]");
+        defer doc.deinit();
+
+        const url_elem = try doc.getChild(0);
+        try testing.expectEqual(NodeType.element, try url_elem.getType());
+        try testing.expectEqualStrings("url", try url_elem.getName(&buf));
+        try testing.expectEqual(2, try url_elem.getChildrenCount());
+        try testing.expectEqual(1, try url_elem.getParameterCount());
+
+        const url_param = try url_elem.getParameterByIndex(0, testing.allocator);
+        defer url_param.deinit(testing.allocator);
+        try testing.expectEqualStrings("https://example.com", url_param.value);
+
+        const text_node = try url_elem.getChild(0) orelse @panic("Expected text node");
+        try testing.expectEqual(NodeType.text, try text_node.getType());
+        try testing.expectEqualStrings("Example", try text_node.getTextContent(&buf));
+
+        const elem_url_end = try url_elem.getChild(1) orelse @panic("Expected closing element");
+        try testing.expectEqual(NodeType.element, try elem_url_end.getType());
+        try testing.expectEqualStrings("url", try elem_url_end.getName(&buf));
+        try testing.expectEqual(0, try elem_url_end.getChildrenCount());
+    }
+
+    {
+        const doc = try Document.parse("[email=example@example.com]Email[/email]");
+        defer doc.deinit();
+
+        const email_elem = try doc.getChild(0);
+        try testing.expectEqual(NodeType.element, try email_elem.getType());
+        try testing.expectEqualStrings("email", try email_elem.getName(&buf));
+        try testing.expectEqual(2, try email_elem.getChildrenCount());
+        try testing.expectEqual(1, try email_elem.getParameterCount());
+
+        const email_param = try email_elem.getParameterByIndex(0, testing.allocator);
+        defer email_param.deinit(testing.allocator);
+        try testing.expectEqualStrings("example@example.com", email_param.value);
+
+        const text_node = try email_elem.getChild(0) orelse @panic("Expected email text node");
+        try testing.expectEqual(NodeType.text, try text_node.getType());
+        try testing.expectEqualStrings("Email", try text_node.getTextContent(&buf));
+
+        const elem_email_end = try email_elem.getChild(1) orelse @panic("Expected email end element");
+        try testing.expectEqual(NodeType.element, try elem_email_end.getType());
+        try testing.expectEqualStrings("email", try elem_email_end.getName(&buf));
+        try testing.expectEqual(0, try elem_email_end.getChildrenCount());
+    }
+}
+
+const std = @import("std");
+const testing = std.testing;
+const errors = @import("errors.zig");
+const bbcpp = @import("bbcpp");
+const Document = @This();
+const Node = @import("Node.zig");
+const Error = errors.Error;
+const Allocator = std.mem.Allocator;
+const enums = @import("enums.zig");
+const NodeType = enums.NodeType;
+const ElementType = enums.ElementType;

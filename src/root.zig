@@ -31,6 +31,8 @@
 
 pub const Document = @import("Document.zig");
 pub const Node = @import("Node.zig");
+pub const markdown_formatter = @import("formatters/markdown.zig");
+pub const tokenizer = @import("tokenizer.zig");
 
 pub const Error = errors.Error;
 pub const ElementType = enums.ElementType;
@@ -40,6 +42,10 @@ const std = @import("std");
 const errors = @import("errors.zig");
 const enums = @import("enums.zig");
 
+const formatters = struct {
+    const markdown = markdown_formatter;
+};
+
 test {
-    std.testing.refAllDecls(@This());
+    std.testing.refAllDeclsRecursive(@This());
 }

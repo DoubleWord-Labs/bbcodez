@@ -16,7 +16,6 @@ handle: *bbcpp.bbcpp_node_t,
 /// Use this to determine which type-specific methods are available.
 ///
 /// Returns: The NodeType enum value for this node
-/// Errors: InvalidArgument if node handle is invalid
 pub fn getType(self: Node) Error!NodeType {
     var node_type: bbcpp.bbcpp_node_type = 0;
     try errors.handleError(bbcpp.bbcpp_node_get_type(self.handle, &node_type));
@@ -27,17 +26,16 @@ pub fn getType(self: Node) Error!NodeType {
 ///
 /// For element nodes, returns the tag name (e.g., "b", "i", "quote").
 /// For text nodes, returns the text content.
-/// Uses an internal buffer limited to 256 characters.
+/// Copies the name into the provided buffer and returns a slice of the actual content.
 ///
-/// Returns: A slice containing the node's name
-/// Errors: InvalidArgument if node handle is invalid, BufferTooSmall if name exceeds 256 chars
-pub fn getName(self: Node) Error![]const u8 {
+/// Args:
+///   buf: Buffer to copy the node name into
+/// Returns: Slice of the buffer containing the actual name
+pub fn getName(self: Node, buf: []u8) Error![]u8 {
     var name_length: usize = 0;
-    var name_buf: [256]u8 = undefined;
 
-    try errors.handleError(bbcpp.bbcpp_node_get_name(self.handle, &name_buf, name_buf.len, &name_length));
-
-    return name_buf[0..name_length];
+    try errors.handleError(bbcpp.bbcpp_node_get_name(self.handle, buf.ptr, buf.len, &name_length));
+    return buf[0..name_length];
 }
 
 /// Returns the number of child nodes.
@@ -46,7 +44,6 @@ pub fn getName(self: Node) Error![]const u8 {
 /// a [b] element containing text and other elements would have multiple children.
 ///
 /// Returns: Number of direct child nodes
-/// Errors: InvalidArgument if node handle is invalid
 pub fn getChildrenCount(self: Node) Error!usize {
     var count: usize = 0;
     try errors.handleError(bbcpp.bbcpp_node_get_children_count(self.handle, &count));
@@ -61,7 +58,6 @@ pub fn getChildrenCount(self: Node) Error!usize {
 /// Args:
 ///   index: Zero-based index of the child to retrieve
 /// Returns: The child Node at the given index, or null if not found
-/// Errors: InvalidArgument if node handle is invalid
 pub fn getChild(self: Node, index: usize) Error!?Node {
     var child_handle: ?*bbcpp.bbcpp_node_t = null;
     errors.handleError(bbcpp.bbcpp_node_get_child(self.handle, index, @ptrCast(&child_handle))) catch |err| switch (err) {
@@ -81,7 +77,6 @@ pub fn getChild(self: Node, index: usize) Error!?Node {
 /// is a root node (like a document child).
 ///
 /// Returns: The parent Node, or null if this is a root node
-/// Errors: InvalidArgument if node handle is invalid
 pub fn getParent(self: Node) Error!?Node {
     var parent_handle: ?*bbcpp.bbcpp_node_t = null;
     try errors.handleError(bbcpp.bbcpp_node_get_parent(self.handle, @ptrCast(&parent_handle)));
@@ -101,7 +96,6 @@ pub fn getParent(self: Node) Error!?Node {
 /// Args:
 ///   buf: Buffer to copy the text content into
 /// Returns: Slice of the buffer containing the actual text content
-/// Errors: InvalidArgument if this is not a text node or buffer is too small
 pub fn getTextContent(self: Node, buf: []u8) Error![]u8 {
     var content_length: usize = 0;
     try errors.handleError(bbcpp.bbcpp_text_get_content(self.handle, buf.ptr, buf.len, &content_length));
@@ -114,7 +108,6 @@ pub fn getTextContent(self: Node, buf: []u8) Error![]u8 {
 /// such as simple, value, parameter, or closing.
 ///
 /// Returns: The ElementType enum value for this element
-/// Errors: InvalidArgument if this is not an element node
 pub fn getElementType(self: Node) Error!ElementType {
     var element_type: bbcpp.bbcpp_element_type = 0;
     try errors.handleError(bbcpp.bbcpp_element_get_type(self.handle, &element_type));
@@ -127,7 +120,6 @@ pub fn getElementType(self: Node) Error!ElementType {
 /// `user="Alice"` in `[quote user="Alice"]`.
 ///
 /// Returns: Number of parameters in this element
-/// Errors: InvalidArgument if this is not an element node
 pub fn getParameterCount(self: Node) Error!usize {
     var count: usize = 0;
     try errors.handleError(bbcpp.bbcpp_element_get_parameter_count(self.handle, &count));
@@ -165,21 +157,18 @@ pub const Parameter = struct {
 ///   index: Zero-based index of the parameter to retrieve
 ///   allocator: Memory allocator for the parameter strings
 /// Returns: Parameter struct containing the key and value
-/// Errors: InvalidArgument if not an element node or index out of bounds, OutOfMemory if allocation fails
 pub fn getParameterByIndex(self: Node, index: usize, allocator: std.mem.Allocator) Error!Parameter {
     var key_length: usize = 0;
     var value_length: usize = 0;
 
-    try errors.handleError(bbcpp.bbcpp_element_get_parameter_by_index(self.handle, index, null, 0, &key_length, null, 0, &value_length));
+    var key_buf: [256]u8 = undefined;
+    var value_buf: [256]u8 = undefined;
 
-    const key_buffer = try allocator.alloc(u8, key_length);
-    const value_buffer = try allocator.alloc(u8, value_length);
-
-    try errors.handleError(bbcpp.bbcpp_element_get_parameter_by_index(self.handle, index, key_buffer.ptr, key_buffer.len, &key_length, value_buffer.ptr, value_buffer.len, &value_length));
+    try errors.handleError(bbcpp.bbcpp_element_get_parameter_by_index(self.handle, index, &key_buf, key_buf.len, &key_length, &value_buf, value_buf.len, &value_length));
 
     return Parameter{
-        .key = key_buffer,
-        .value = value_buffer,
+        .key = try allocator.dupe(u8, key_buf[0..key_length]),
+        .value = try allocator.dupe(u8, value_buf[0..value_length]),
     };
 }
 
@@ -192,16 +181,13 @@ pub fn getParameterByIndex(self: Node, index: usize, allocator: std.mem.Allocato
 ///   key: Parameter name to look up
 ///   allocator: Memory allocator for the returned value string
 /// Returns: Allocated string containing the parameter value
-/// Errors: InvalidArgument if not an element node, NotFound if parameter doesn't exist, OutOfMemory if allocation fails
-pub fn getParameter(self: Node, key: []const u8, allocator: std.mem.Allocator) Error![]u8 {
+pub fn getParameter(self: Node, key: []const u8) Error![]u8 {
     var value_length: usize = 0;
+    var value_buf: [256]u8 = undefined;
 
-    try errors.handleError(bbcpp.bbcpp_element_get_parameter(self.handle, key.ptr, null, 0, &value_length));
+    try errors.handleError(bbcpp.bbcpp_element_get_parameter(self.handle, key.ptr, &value_buf, value_buf.len, &value_length));
 
-    const buffer = try allocator.alloc(u8, value_length);
-    try errors.handleError(bbcpp.bbcpp_element_get_parameter(self.handle, key.ptr, buffer.ptr, buffer.len, &value_length));
-
-    return buffer;
+    return value_buf[0..value_length];
 }
 
 /// Checks if an element has a parameter with the given key.
@@ -212,7 +198,6 @@ pub fn getParameter(self: Node, key: []const u8, allocator: std.mem.Allocator) E
 /// Args:
 ///   key: Parameter name to check for
 /// Returns: true if the parameter exists, false otherwise
-/// Errors: InvalidArgument if this is not an element node
 pub fn hasParameter(self: Node, key: []const u8) Error!bool {
     var has_param: c_int = 0;
     try errors.handleError(bbcpp.bbcpp_element_has_parameter(self.handle, key.ptr, &has_param));
@@ -228,21 +213,43 @@ pub fn hasParameter(self: Node, key: []const u8) Error!bool {
 /// Args:
 ///   allocator: Memory allocator for the returned string
 /// Returns: Allocated string containing all text content from this subtree
-/// Errors: InvalidArgument if node is invalid, OutOfMemory if allocation fails
-pub fn getRawString(self: Node, allocator: std.mem.Allocator) Error![]u8 {
+pub fn getRawString(self: Node, buffer: []u8) Error![]u8 {
     var content_length: usize = 0;
-
-    // First call to get required length
-    try errors.handleError(bbcpp.bbcpp_get_raw_string(self.handle, null, 0, &content_length));
-
-    const buffer = try allocator.alloc(u8, content_length);
     try errors.handleError(bbcpp.bbcpp_get_raw_string(self.handle, buffer.ptr, buffer.len, &content_length));
 
-    return buffer;
+    return buffer[0..content_length];
 }
 
 const std = @import("std");
+const testing = std.testing;
 const bbcpp = @import("bbcpp");
 const errors = @import("errors.zig");
 const NodeType = @import("enums.zig").NodeType;
 const ElementType = @import("enums.zig").ElementType;
+const Document = @import("Document.zig");
+
+test Node {
+    const bbcode = "[b]Hello, world[/b]";
+
+    const doc = try Document.parse(bbcode);
+    defer doc.deinit();
+
+    const node = try doc.getChild(0);
+
+    var text_buf: [256]u8 = undefined;
+
+    for (0..try node.getChildrenCount()) |i| {
+        const child = (try node.getChild(i)).?;
+
+        switch (try child.getType()) {
+            .element => {
+                try testing.expectEqual(ElementType.closing, try child.getElementType());
+                try testing.expectEqualStrings("b", try child.getName(&text_buf));
+            },
+            .text => {
+                try testing.expectEqualStrings("Hello, world", try child.getTextContent(&text_buf));
+            },
+            else => unreachable,
+        }
+    }
+}
