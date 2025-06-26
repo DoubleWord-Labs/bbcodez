@@ -113,7 +113,7 @@ test render {
         \\[u]Underlined text[/u]
         \\[url=https://example.com]Link[/url]
         \\[email=user@example.com]Email[/email]
-        // \\[code]This is a code block[/code]
+        \\[code]This is a code block[/code]
     ;
 
     var document = try Document.loadFromBuffer(testing.allocator, bbcode_document);
@@ -130,6 +130,9 @@ test render {
         \\__Underlined text__
         \\[Link](https://example.com)
         \\[Email](mailto:user@example.com)
+        \\```
+        \\This is a code block
+        \\```
     ;
 
     try testing.expectEqualStrings(expected_markdown, out_buffer.items);

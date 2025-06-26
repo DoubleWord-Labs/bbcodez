@@ -102,6 +102,53 @@ pub const TokenResult = struct {
             .index = 0,
         };
     }
+
+    pub fn print(self: TokenResult, writer: anytype) !void {
+        try writer.writeAll("TokenResult:\n");
+
+        try writer.writeByteNTimes(' ', 2);
+        try writer.writeAll("Buffer:\n");
+        try writer.writeAll(self.buffer.items);
+        try writer.writeByteNTimes('\n', 2);
+
+        try writer.writeByteNTimes(' ', 2);
+        try writer.writeAll("Locations:\n");
+        for (self.locations.items, 0..) |location, i| {
+            try writer.writeByteNTimes(' ', 4);
+            try writer.print("[{d}]: start={d} end={d} type={s}", .{
+                i,
+                location.base.start,
+                location.base.end,
+                @tagName(location.type),
+            });
+
+            switch (location.type) {
+                .element => |el| if (el.parameter) |param| {
+                    try writer.print(" p_start={d} p_end={d}", .{ param.start, param.end });
+                },
+                else => {},
+            }
+
+            try writer.writeByte('\n');
+        }
+        try writer.writeByteNTimes('\n', 2);
+
+        try writer.writeByteNTimes(' ', 2);
+        try writer.writeAll("Tokens:\n");
+        var it = self.iterator();
+        var i: usize = 0;
+        while (it.next()) |token| : (i += 1) {
+            try writer.writeByteNTimes(' ', 4);
+            try writer.print("[{d}]: {s} \"{s}\" {s}\n", .{ i, @tagName(token.type), token.name, token.value orelse "" });
+        }
+    }
+
+    pub fn format(self: TokenResult, fmt: anytype, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try self.print(writer);
+    }
 };
 
 pub fn tokenizeBuffer(allocator: std.mem.Allocator, buffer: []const u8) !TokenResult {
@@ -244,6 +291,7 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader) !TokenRe
 
                                 state = .text;
                                 start = current + 1;
+                                param_start = null;
                             }
                         },
                         else => {},
