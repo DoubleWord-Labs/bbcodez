@@ -1,8 +1,7 @@
 //! BBCodeZ - A Zig library for parsing BBCode markup.
 //!
 //! This library provides a fast and safe way to parse BBCode text into a tree structure
-//! that can be traversed and analyzed. Built on top of the bbcpp C++ library with
-//! a idiomatic Zig interface.
+//! that can be traversed and analyzed.
 //!
 //! ## Quick Start
 //!
@@ -34,12 +33,10 @@ pub const Node = @import("Node.zig");
 pub const markdown_formatter = @import("formatters/markdown.zig");
 pub const tokenizer = @import("tokenizer.zig");
 
-pub const Error = errors.Error;
 pub const ElementType = enums.ElementType;
 pub const NodeType = enums.NodeType;
 
 const std = @import("std");
-const errors = @import("errors.zig");
 const enums = @import("enums.zig");
 
 const formatters = struct {

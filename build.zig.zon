@@ -3,15 +3,7 @@
     .version = "0.0.0",
     .fingerprint = 0x9e2aa21706ce5a62, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.1",
-    .dependencies = .{
-        // .bbcpp = .{
-        //     .url = "git+https://github.com/deevus/bbcpp.git#20cfdea30c1765606e2b48822ebc308e4819e5d6",
-        //     .hash = "N-V-__8AAIDCAQBp9Jk5jeFXRkB09sNlIVtqQRNYuIXV5mf9",
-        // },
-        .bbcpp = .{
-            .path = "../bbcpp",
-        },
-    },
+    .dependencies = .{},
     .paths = .{
         "build.zig",
         "build.zig.zon",

@@ -2,36 +2,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib_bbcpp = b.dependency("bbcpp", .{});
-
     const lib_mod = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-
-    const translate_bbcpp = b.addTranslateC(.{
-        .root_source_file = lib_bbcpp.builder.path("lib/bbcpp_c.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const mod_bbcpp = b.createModule(.{
-        .root_source_file = translate_bbcpp.getOutput(),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    lib_mod.addCSourceFiles(.{
-        .root = lib_bbcpp.builder.path("lib"),
-        .files = &.{
-            "bbcpputils.cpp",
-            "BBDocument.cpp",
-            "bbcpp_c.cpp",
-        },
-    });
-    lib_mod.addIncludePath(lib_bbcpp.builder.path("lib"));
-    lib_mod.addImport("bbcpp", mod_bbcpp);
 
     const lib = b.addLibrary(.{
         .linkage = .static,

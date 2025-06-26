@@ -1,15 +1,13 @@
-pub const NodeType = enum(bbcpp.bbcpp_node_type) {
-    document = bbcpp.BBCPP_NODE_DOCUMENT,
-    element = bbcpp.BBCPP_NODE_ELEMENT,
-    text = bbcpp.BBCPP_NODE_TEXT,
-    attribute = bbcpp.BBCPP_NODE_ATTRIBUTE,
+pub const NodeType = enum {
+    document,
+    element,
+    text,
+    attribute,
 };
 
-pub const ElementType = enum(bbcpp.bbcpp_element_type) {
-    simple = bbcpp.BBCPP_ELEMENT_SIMPLE,
-    value = bbcpp.BBCPP_ELEMENT_VALUE,
-    parameter = bbcpp.BBCPP_ELEMENT_PARAMETER,
-    closing = bbcpp.BBCPP_ELEMENT_CLOSING,
+pub const ElementType = enum {
+    simple,
+    value,
+    parameter,
+    closing,
 };
-
-const bbcpp = @import("bbcpp");
