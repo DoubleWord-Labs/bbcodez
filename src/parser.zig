@@ -18,6 +18,7 @@ pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult) !Document {
                     .value = .{
                         .text = try a_allocator.dupe(u8, token.name),
                     },
+                    .parent = current,
                 };
 
                 try current.appendChild(a_allocator, text_node);
@@ -28,8 +29,10 @@ pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult) !Document {
                     .value = .{
                         .element = .{
                             .name = try a_allocator.dupe(u8, token.name),
+                            .value = if (token.value) |value| try a_allocator.dupe(u8, value) else null,
                         },
                     },
+                    .parent = current,
                 };
 
                 try current.appendChild(a_allocator, element_node);
@@ -43,6 +46,7 @@ pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult) !Document {
 
                 if (std.mem.eql(u8, item, try current.getName())) {
                     _ = stack.pop();
+                    current = current.parent orelse break;
                 } else {
                     return error.UnexpectedClosingElement;
                 }

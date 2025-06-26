@@ -35,6 +35,17 @@ pub fn deinit(self: Document) void {
     self.arena.deinit();
 }
 
+pub fn format(self: Document, fmt: anytype, options: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = options;
+
+    try self.print(writer);
+}
+
+pub fn print(self: Document, writer: anytype) !void {
+    try self.root.print(writer, 0);
+}
+
 pub fn walk(self: Document, allocator: Allocator, order: Walker.TraversalOrder) !Walker {
     return Walker.init(self, allocator, order);
 }

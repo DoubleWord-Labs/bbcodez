@@ -16,6 +16,7 @@ pub const Value = union(Type) {
     text: []const u8,
     element: struct {
         name: []const u8,
+        value: ?[]const u8 = null,
     },
     document: void,
 };
@@ -57,6 +58,7 @@ pub fn getLastChild(self: *Node) !?*Node {
 pub fn getName(self: Node) ![]const u8 {
     switch (self.value) {
         .element => |v| return v.name,
+        .text => |v| return v,
         else => return error.InvalidNodeType,
     }
 }
@@ -68,6 +70,87 @@ pub fn getText(self: Node) ![]const u8 {
 
     return error.InvalidNodeType;
 }
+
+pub fn getValue(self: Node) !?[]const u8 {
+    if (self.type == .element) {
+        return self.value.element.value;
+    }
+
+    return error.InvalidNodeType;
+}
+
+pub fn format(self: Node, fmt: anytype, options: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = options;
+
+    try self.print(self, writer.any(), 0);
+}
+
+pub fn print(self: Node, writer: std.io.AnyWriter, depth: usize) !void {
+    var printer = NodePrinter{
+        .writer = writer,
+        .depth = depth,
+    };
+
+    switch (self.type) {
+        .document => {
+            try printer.writeLine("<document>");
+        },
+        .element => {
+            try printer.printLine("<element name=\"{s}\">", .{try self.getName()});
+        },
+        .text => {
+            try printer.writeLine(try self.getText());
+        },
+    }
+
+    var it = self.iterator();
+    while (it.next()) |node| {
+        try node.print(writer, depth + 1);
+    }
+
+    switch (self.type) {
+        .document => try printer.writeLine("</document>"),
+        .element => {
+            try printer.writeLine("</element>");
+        },
+        .text => {},
+    }
+}
+
+pub const NodePrinter = struct {
+    const indent_size = 4;
+
+    writer: std.io.AnyWriter,
+    depth: usize = 0,
+    indent: bool = true,
+
+    pub fn write(self: NodePrinter, input: []const u8) !void {
+        if (self.indent) {
+            try self.writer.writeByteNTimes(' ', indent_size * self.depth);
+        }
+
+        _ = try self.writer.write(input);
+    }
+
+    pub fn writeLine(self: NodePrinter, input: []const u8) !void {
+        try self.write(input);
+        try self.writer.writeByte('\n');
+    }
+
+    pub fn print(self: NodePrinter, comptime fmt: []const u8, args: anytype) !void {
+        if (self.indent) {
+            try self.writer.writeByteNTimes(' ', indent_size * self.depth);
+        }
+
+        try self.writer.print(fmt, args);
+    }
+
+    pub fn printLine(self: NodePrinter, comptime fmt: []const u8, args: anytype) !void {
+        try self.print(fmt, args);
+        try self.writer.writeByte('\n');
+    }
+};
 
 /// Represents a key-value parameter pair from a BBCode element.
 ///
