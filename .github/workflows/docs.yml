@@ -22,9 +22,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup mise
-        uses: goto-bus-stop/setup-zig@v2
+        uses: jdx/mise-action@v2
         with:
-          version: 0.14.1
+          cache: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build documentation
         run: zig build docs
