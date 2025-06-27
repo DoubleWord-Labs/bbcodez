@@ -9,6 +9,11 @@ root: Node = .{
     .value = .document,
 },
 
+pub const Options = struct {
+    tokenizer_options: ?tokenizer.Options = null,
+    parser_options: ?parser.Options = null,
+};
+
 /// Parses BBCode text and builds the internal tree structure.
 ///
 /// Takes a BBCode string and parses it into a tree of nodes
@@ -16,15 +21,15 @@ root: Node = .{
 ///
 /// Args:
 ///   bbcode: BBCode string to parse
-pub fn load(allocator: Allocator, reader: std.io.AnyReader) !Document {
-    var tokens = try tokenizer.tokenize(allocator, reader);
+pub fn load(allocator: Allocator, reader: std.io.AnyReader, options: Options) !Document {
+    var tokens = try tokenizer.tokenize(allocator, reader, options.tokenizer_options orelse .{});
     defer tokens.deinit(allocator);
-    return try parser.parse(allocator, tokens);
+    return try parser.parse(allocator, tokens, options.parser_options orelse .{});
 }
 
-pub fn loadFromBuffer(allocator: Allocator, bbcode: []const u8) !Document {
+pub fn loadFromBuffer(allocator: Allocator, bbcode: []const u8, options: Options) !Document {
     var fbs = std.io.fixedBufferStream(bbcode);
-    return try load(allocator, fbs.reader().any());
+    return try load(allocator, fbs.reader().any(), options);
 }
 
 /// Frees resources associated with the document.

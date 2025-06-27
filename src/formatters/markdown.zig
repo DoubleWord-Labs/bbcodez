@@ -184,7 +184,7 @@ test render {
         \\[list][*]one[*]two[*]three[/list]
     ;
 
-    var document = try Document.loadFromBuffer(testing.allocator, bbcode_document);
+    var document = try Document.loadFromBuffer(testing.allocator, bbcode_document, .{});
     defer document.deinit();
 
     var out_buffer = std.ArrayListUnmanaged(u8){};

@@ -1,3 +1,12 @@
+const default_verbatim_tags = &[_][]const u8{
+    "code",
+};
+
+pub const Options = struct {
+    verbatim_tags: ?[][]const u8 = @constCast(default_verbatim_tags),
+    equals_required_in_parameters: bool = true,
+};
+
 pub const TokenType = enum {
     text,
     element,
@@ -151,19 +160,27 @@ pub const TokenResult = struct {
     }
 };
 
-pub fn tokenizeBuffer(allocator: std.mem.Allocator, buffer: []const u8) !TokenResult {
+pub fn tokenizeBuffer(allocator: std.mem.Allocator, buffer: []const u8, options: Options) !TokenResult {
     var fbs = std.io.fixedBufferStream(buffer);
 
-    var tokenizer = try tokenize(allocator, fbs.reader().any());
+    var tokenizer = try tokenize(allocator, fbs.reader().any(), options);
     try tokenizer.buffer.ensureTotalCapacity(allocator, buffer.len);
 
     return tokenizer;
 }
 
-fn isElementValid(slice: []const u8) bool {
+fn isElementValid(slice: []const u8, verbatim_tag: ?[]const u8, equals_required_in_parameters: bool) bool {
+    if (verbatim_tag) |verbatim_tn| {
+        if (!std.mem.eql(u8, verbatim_tn, getTagName(slice))) {
+            return false;
+        }
+    }
+
     // if elements have a space but no equal sign
-    if (std.mem.indexOf(u8, slice, " ") != null and std.mem.indexOf(u8, slice, "=") == null) {
-        return false;
+    if (equals_required_in_parameters) {
+        if (std.mem.indexOf(u8, slice, " ") != null and std.mem.indexOf(u8, slice, "=") == null) {
+            return false;
+        }
     }
 
     // if elements have no content
@@ -181,11 +198,11 @@ const escape_chars = &[_]u8{
     ' ',
 };
 
-fn isEscaped(byte: u8, last_byte: u8) bool {
-    if (last_byte != '\\') {
-        return false;
-    }
+fn isEscapeChar(byte: u8) bool {
+    return byte == '\\';
+}
 
+fn canBeEscaped(byte: u8) bool {
     return std.mem.indexOfAny(u8, &.{byte}, escape_chars) != null;
 }
 
@@ -196,7 +213,33 @@ const State = enum {
     parameter,
 };
 
-pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader) !TokenResult {
+fn isVerbatimTag(tag_name: []const u8, verbatim_tags: StringHashMap(void)) bool {
+    return verbatim_tags.contains(tag_name);
+}
+
+fn getTagName(tag: []const u8) []const u8 {
+    if (tag.len == 2) {
+        return "";
+    }
+
+    const tn_start: usize = blk: {
+        if (tag[1] == '/') {
+            break :blk 2;
+        }
+        break :blk 1;
+    };
+    const tn_end: usize = blk: {
+        if (std.mem.indexOfAnyPos(u8, tag, tn_start + 1, " =")) |v| {
+            break :blk v;
+        }
+
+        break :blk tag.len - 1;
+    };
+
+    return tag[tn_start..tn_end];
+}
+
+pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options: Options) !TokenResult {
     var state: State = .text;
     var start: usize = 0;
     var last_byte: u8 = 0;
@@ -206,15 +249,45 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader) !TokenRe
     var parsed: TokenResult = .empty;
     errdefer parsed.deinit(allocator);
 
+    var verbatim_tags: StringHashMap(void) = .empty;
+    defer verbatim_tags.deinit(allocator);
+
+    if (options.verbatim_tags) |tags| {
+        for (tags) |tag| {
+            try verbatim_tags.put(allocator, tag, {});
+        }
+    }
+
+    var verbatim_tag: ?[]const u8 = null;
+    var escaped: bool = false;
+
     while (true) {
         current = parsed.buffer.items.len;
 
-        const byte = reader.readByte() catch break;
+        var byte = reader.readByte() catch break;
+
+        if (isEscapeChar(byte)) {
+            // look ahead to check if next byte is a valid escape sequence
+            const next_byte = reader.readByte() catch {
+                try parsed.buffer.append(allocator, byte);
+                break;
+            };
+
+            if (canBeEscaped(next_byte)) {
+                // skip this byte
+                // append next byte
+                byte = next_byte;
+                escaped = true;
+            } else {
+                // continue with next byte
+                byte = next_byte;
+            }
+        }
 
         try parsed.buffer.append(allocator, byte);
 
-        if (isEscaped(byte, last_byte)) {
-            _ = parsed.buffer.swapRemove(current - 1);
+        if (escaped) {
+            escaped = false;
         } else {
             switch (byte) {
                 // start element
@@ -265,8 +338,20 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader) !TokenRe
                     switch (state) {
                         .element, .closingElement, .parameter => {
                             const slice = parsed.buffer.items[start .. current + 1];
+                            const tag_name = getTagName(slice);
 
-                            if (isElementValid(slice)) {
+                            if (isElementValid(slice, verbatim_tag, options.equals_required_in_parameters)) {
+                                if (isVerbatimTag(tag_name, verbatim_tags)) switch (state) {
+                                    .element => {
+                                        verbatim_tag = try allocator.dupe(u8, tag_name);
+                                    },
+                                    .closingElement => if (verbatim_tag != null) {
+                                        allocator.free(verbatim_tag.?);
+                                        verbatim_tag = null;
+                                    },
+                                    else => {},
+                                };
+
                                 try parsed.locations.append(allocator, .{
                                     .base = .{
                                         .start = start,
@@ -343,7 +428,7 @@ test "basic tokenization" {
         \\Just text
     ;
 
-    var parsed = try tokenizeBuffer(testing.allocator, bbcode);
+    var parsed = try tokenizeBuffer(testing.allocator, bbcode, .{});
     defer parsed.deinit(testing.allocator);
 
     var iterator = parsed.iterator();
@@ -418,13 +503,13 @@ test "basic tokenization" {
 
 test "empty content" {
     // Empty input
-    var empty_parsed = try tokenizeBuffer(testing.allocator, "");
+    var empty_parsed = try tokenizeBuffer(testing.allocator, "", .{});
     defer empty_parsed.deinit(testing.allocator);
     var empty_iterator = empty_parsed.iterator();
     try testing.expectEqual(null, empty_iterator.next());
 
     // Empty tag content
-    var empty_tag_parsed = try tokenizeBuffer(testing.allocator, "[b][/b]");
+    var empty_tag_parsed = try tokenizeBuffer(testing.allocator, "[b][/b]", .{});
     defer empty_tag_parsed.deinit(testing.allocator);
     var empty_tag_iterator = empty_tag_parsed.iterator();
 
@@ -439,7 +524,7 @@ test "empty content" {
     try testing.expectEqual(null, empty_tag_iterator.next());
 
     // Empty parameter value
-    var empty_param_parsed = try tokenizeBuffer(testing.allocator, "[url=][/url]");
+    var empty_param_parsed = try tokenizeBuffer(testing.allocator, "[url=][/url]", .{});
     defer empty_param_parsed.deinit(testing.allocator);
     var empty_param_iterator = empty_param_parsed.iterator();
 
@@ -451,7 +536,7 @@ test "empty content" {
 
 test "malformed tags" {
     // Unclosed opening bracket - should be treated as text
-    var unclosed_parsed = try tokenizeBuffer(testing.allocator, "[b unclosed tag");
+    var unclosed_parsed = try tokenizeBuffer(testing.allocator, "[b unclosed tag", .{});
     defer unclosed_parsed.deinit(testing.allocator);
     var unclosed_iterator = unclosed_parsed.iterator();
 
@@ -461,7 +546,7 @@ test "malformed tags" {
     try testing.expectEqual(null, unclosed_iterator.next());
 
     // Missing closing bracket on closing tag - should be treated as text after valid opening
-    var missing_bracket_parsed = try tokenizeBuffer(testing.allocator, "[b]text[/b missing bracket");
+    var missing_bracket_parsed = try tokenizeBuffer(testing.allocator, "[b]text[/b missing bracket", .{});
     defer missing_bracket_parsed.deinit(testing.allocator);
     var missing_bracket_iterator = missing_bracket_parsed.iterator();
 
@@ -474,7 +559,7 @@ test "malformed tags" {
     try testing.expectEqualStrings("text[/b missing bracket", text.name);
 
     // Empty brackets - should be treated as text
-    var empty_brackets_parsed = try tokenizeBuffer(testing.allocator, "[]");
+    var empty_brackets_parsed = try tokenizeBuffer(testing.allocator, "[]", .{});
     defer empty_brackets_parsed.deinit(testing.allocator);
     var empty_brackets_iterator = empty_brackets_parsed.iterator();
 
@@ -487,7 +572,7 @@ test "malformed tags" {
 test "nested tags" {
     const nested_bbcode = "[b]Bold [i]and italic[/i] text[/b]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, nested_bbcode);
+    var parsed = try tokenizeBuffer(testing.allocator, nested_bbcode, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -533,7 +618,7 @@ test "special characters in parameters" {
     // URL with query parameters and fragment
     const complex_url = "[url=https://example.com?param=value&other=test#section]Link[/url]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, complex_url);
+    var parsed = try tokenizeBuffer(testing.allocator, complex_url, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -544,7 +629,7 @@ test "special characters in parameters" {
 
     // Parameter with equals sign in value
     const code_with_equals = "[code=javascript]var x = 5;[/code]";
-    var code_parsed = try tokenizeBuffer(testing.allocator, code_with_equals);
+    var code_parsed = try tokenizeBuffer(testing.allocator, code_with_equals, .{});
     defer code_parsed.deinit(testing.allocator);
     var code_iterator = code_parsed.iterator();
 
@@ -557,7 +642,7 @@ test "special characters in parameters" {
 test "whitespace in tags" {
     // Tags with spaces in names should be treated as invalid/text
     const spaced_tag = "[ b]text[/b ]";
-    var spaced_parsed = try tokenizeBuffer(testing.allocator, spaced_tag);
+    var spaced_parsed = try tokenizeBuffer(testing.allocator, spaced_tag, .{});
     defer spaced_parsed.deinit(testing.allocator);
     var spaced_iterator = spaced_parsed.iterator();
 
@@ -567,7 +652,7 @@ test "whitespace in tags" {
 
     // Valid parameter with spaces around equals
     const spaced_param = "[url= https://example.com ]Link[/url]";
-    var parsed = try tokenizeBuffer(testing.allocator, spaced_param);
+    var parsed = try tokenizeBuffer(testing.allocator, spaced_param, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -588,7 +673,7 @@ test "whitespace in tags" {
 test "multiple parameter separators" {
     // Multiple equals signs - value should include all equals
     const multi_equals = "[url=http://example.com=backup]Link[/url]";
-    var equals_parsed = try tokenizeBuffer(testing.allocator, multi_equals);
+    var equals_parsed = try tokenizeBuffer(testing.allocator, multi_equals, .{});
     defer equals_parsed.deinit(testing.allocator);
     var equals_iterator = equals_parsed.iterator();
 
@@ -602,7 +687,7 @@ test "literal brackets in text" {
     // Brackets with spaces should be treated as text since they're invalid tags
     const literal_brackets = "Use [not a tag] for something";
 
-    var parsed = try tokenizeBuffer(testing.allocator, literal_brackets);
+    var parsed = try tokenizeBuffer(testing.allocator, literal_brackets, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -614,7 +699,7 @@ test "literal brackets in text" {
 
     // Test with unmatched single bracket
     const single_bracket = "Price: $5 [special offer";
-    var single_parsed = try tokenizeBuffer(testing.allocator, single_bracket);
+    var single_parsed = try tokenizeBuffer(testing.allocator, single_bracket, .{});
     defer single_parsed.deinit(testing.allocator);
     var single_iterator = single_parsed.iterator();
 
@@ -629,7 +714,7 @@ test "self closing tag pattern" {
     // Tags that might be self-closing (no closing tag)
     const self_closing = "Line 1[br]Line 2[hr]Line 3";
 
-    var parsed = try tokenizeBuffer(testing.allocator, self_closing);
+    var parsed = try tokenizeBuffer(testing.allocator, self_closing, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -659,7 +744,7 @@ test "self closing tag pattern" {
 test "newlines in tags" {
     const multiline_tag = "[url=https://\nexample.com]Link[/url]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, multiline_tag);
+    var parsed = try tokenizeBuffer(testing.allocator, multiline_tag, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -684,7 +769,7 @@ test "long content stress test" {
     const long_tag_name = "a" ** 1000;
     const long_tag = "[" ++ long_tag_name ++ "]content[/" ++ long_tag_name ++ "]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, long_tag);
+    var parsed = try tokenizeBuffer(testing.allocator, long_tag, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -707,7 +792,7 @@ test "mixed case tags" {
     // BBCode should be case-insensitive, but preserve original case in tokens
     const mixed_case = "[B]Bold[/B][URL=http://example.com]Link[/URL]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, mixed_case);
+    var parsed = try tokenizeBuffer(testing.allocator, mixed_case, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -743,7 +828,7 @@ test "valid tag names" {
     // Valid tag names should only contain alphanumeric characters and underscores
     const valid_tags = "[tag123]content[/tag123][my_tag]text[/my_tag]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, valid_tags);
+    var parsed = try tokenizeBuffer(testing.allocator, valid_tags, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -778,7 +863,7 @@ test "escaped brackets" {
     // Escaped brackets should be treated as literal text
     const escaped = "Use \\[b\\] to make text bold, not [b]actual bold[/b]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, escaped);
+    var parsed = try tokenizeBuffer(testing.allocator, escaped, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -805,7 +890,7 @@ test "quoted parameters" {
     // Parameters with quotes should preserve the quotes
     const quoted = "[font=\"Times New Roman\"]text[/font][color='red']colored[/color]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, quoted);
+    var parsed = try tokenizeBuffer(testing.allocator, quoted, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -842,7 +927,7 @@ test "mismatched tags" {
     // Mismatched opening and closing tags - tokenizer should still parse them separately
     const mismatched = "[b]bold text[/i][i]italic[/b]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, mismatched);
+    var parsed = try tokenizeBuffer(testing.allocator, mismatched, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -876,7 +961,7 @@ test "mismatched tags" {
 test "deeply nested tags" {
     const deeply_nested = "[b][i][u][s]text[/s][/u][/i][/b]";
 
-    var parsed = try tokenizeBuffer(testing.allocator, deeply_nested);
+    var parsed = try tokenizeBuffer(testing.allocator, deeply_nested, .{});
     defer parsed.deinit(testing.allocator);
     var iterator = parsed.iterator();
 
@@ -921,6 +1006,8 @@ test "deeply nested tags" {
 
     try testing.expectEqual(null, iterator.next());
 }
+
+const StringHashMap = std.StringHashMapUnmanaged;
 
 const std = @import("std");
 const testing = std.testing;

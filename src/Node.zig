@@ -59,7 +59,7 @@ pub fn getName(self: Node) ![]const u8 {
     switch (self.value) {
         .element => |v| return v.name,
         .text => |v| return v,
-        else => return error.InvalidNodeType,
+        .document => return "document",
     }
 }
 
