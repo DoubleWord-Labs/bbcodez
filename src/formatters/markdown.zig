@@ -70,9 +70,9 @@ fn writeUnderlineElement(node: Node, writer: std.io.AnyWriter) !void {
 }
 
 fn writeCodeElement(node: Node, writer: std.io.AnyWriter) !void {
-    try writer.writeAll("```\n");
+    try writer.writeAll("`");
     try render(node, writer);
-    try writer.writeAll("\n```");
+    try writer.writeAll("`");
 }
 
 fn writeAllChildrenText(node: Node, writer: std.io.AnyWriter) !void {
@@ -130,9 +130,7 @@ test render {
         \\__Underlined text__
         \\[Link](https://example.com)
         \\[Email](mailto:user@example.com)
-        \\```
-        \\This is a code block
-        \\```
+        \\`This is a code block`
     ;
 
     try testing.expectEqualStrings(expected_markdown, out_buffer.items);
