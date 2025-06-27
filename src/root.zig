@@ -30,7 +30,6 @@
 
 pub const Document = @import("Document.zig");
 pub const Node = @import("Node.zig");
-pub const markdown_formatter = @import("formatters/markdown.zig");
 pub const tokenizer = @import("tokenizer.zig");
 
 pub const ElementType = enums.ElementType;
@@ -39,8 +38,8 @@ pub const NodeType = enums.NodeType;
 const std = @import("std");
 const enums = @import("enums.zig");
 
-const formatters = struct {
-    const markdown = markdown_formatter;
+pub const fmt = struct {
+    const markdown = @import("formatters/markdown.zig");
 };
 
 test {
