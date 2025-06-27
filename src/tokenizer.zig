@@ -266,9 +266,7 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader) !TokenRe
                         .element, .closingElement, .parameter => {
                             const slice = parsed.buffer.items[start .. current + 1];
 
-                            if (!isElementValid(slice)) {
-                                state = .text;
-                            } else {
+                            if (isElementValid(slice)) {
                                 try parsed.locations.append(allocator, .{
                                     .base = .{
                                         .start = start,
