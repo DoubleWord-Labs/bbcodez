@@ -83,10 +83,10 @@ pub fn format(self: Node, fmt: anytype, options: std.fmt.FormatOptions, writer: 
     _ = fmt;
     _ = options;
 
-    try self.print(self, writer.any(), 0);
+    try self.print(writer, 0);
 }
 
-pub fn print(self: Node, writer: std.io.AnyWriter, depth: usize) !void {
+pub fn print(self: Node, writer: anytype, depth: usize) !void {
     var printer = NodePrinter{
         .writer = writer,
         .depth = depth,
@@ -97,7 +97,7 @@ pub fn print(self: Node, writer: std.io.AnyWriter, depth: usize) !void {
             try printer.writeLine("<document>");
         },
         .element => {
-            try printer.printLine("<element name=\"{s}\">", .{try self.getName()});
+            try printer.printLine("<{s}>", .{try self.getName()});
         },
         .text => {
             try printer.writeLine(try self.getText());
@@ -112,7 +112,7 @@ pub fn print(self: Node, writer: std.io.AnyWriter, depth: usize) !void {
     switch (self.type) {
         .document => try printer.writeLine("</document>"),
         .element => {
-            try printer.writeLine("</element>");
+            try printer.printLine("</{s}>", .{try self.getName()});
         },
         .text => {},
     }
