@@ -210,7 +210,7 @@ const State = enum {
     text,
     element,
     closingElement,
-    parameter,
+    elementWithParameter,
 };
 
 fn isVerbatimTag(tag_name: []const u8, verbatim_tags: StringHashMap(void)) bool {
@@ -318,13 +318,13 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
 
                     if (state == .element) {
                         param_start = current + 1;
-                        state = .parameter;
+                        state = .elementWithParameter;
                     }
                 },
                 '=' => {
                     if (state == .element) {
                         param_start = current + 1;
-                        state = .parameter;
+                        state = .elementWithParameter;
                     }
                 },
                 // closing element
@@ -336,13 +336,16 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
                 // element end
                 ']' => {
                     switch (state) {
-                        .element, .closingElement, .parameter => {
+                        .element, .closingElement, .elementWithParameter => {
                             const slice = parsed.buffer.items[start .. current + 1];
                             const tag_name = getTagName(slice);
+                            const is_valid_element = isElementValid(slice, verbatim_tag, options.equals_required_in_parameters);
 
-                            if (isElementValid(slice, verbatim_tag, options.equals_required_in_parameters)) {
-                                if (isVerbatimTag(tag_name, verbatim_tags)) switch (state) {
-                                    .element => {
+                            if (is_valid_element) {
+                                const is_verbatim = isVerbatimTag(tag_name, verbatim_tags);
+
+                                if (is_verbatim) switch (state) {
+                                    .element, .elementWithParameter => {
                                         verbatim_tag = try allocator.dupe(u8, tag_name);
                                     },
                                     .closingElement => if (verbatim_tag != null) {
@@ -358,7 +361,7 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
                                         .end = current + 1,
                                     },
                                     .type = switch (state) {
-                                        .element, .parameter => .{
+                                        .element, .elementWithParameter => .{
                                             .element = .{
                                                 .parameter = if (param_start) |p_start| .{
                                                     .start = p_start,
@@ -372,10 +375,11 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
                                     },
                                 });
 
-                                state = .text;
                                 start = current + 1;
-                                param_start = null;
                             }
+
+                            state = .text;
+                            param_start = null;
                         },
                         else => {},
                     }
