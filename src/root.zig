@@ -39,7 +39,7 @@ const std = @import("std");
 const enums = @import("enums.zig");
 
 pub const fmt = struct {
-    const markdown = @import("formatters/markdown.zig");
+    pub const md = @import("formatters/markdown.zig");
 };
 
 test {
