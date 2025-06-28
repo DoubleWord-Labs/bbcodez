@@ -31,9 +31,15 @@
 pub const Document = @import("Document.zig");
 pub const Node = @import("Node.zig");
 pub const tokenizer = @import("tokenizer.zig");
+pub const parser = @import("parser.zig");
 
 pub const ElementType = enums.ElementType;
 pub const NodeType = enums.NodeType;
+
+pub const parse = parser.parse;
+pub const tokenize = tokenizer.tokenize;
+pub const load = Document.load;
+pub const loadFromBuffer = Document.loadFromBuffer;
 
 const std = @import("std");
 const enums = @import("enums.zig");
