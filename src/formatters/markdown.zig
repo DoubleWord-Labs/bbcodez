@@ -1,4 +1,4 @@
-pub const WriteElementFunction = *const fn (node: Node, ctx: ?*anyopaque) anyerror!bool;
+pub const WriteElementFunction = *const fn (node: Node, ctx: ?*const anyopaque) anyerror!bool;
 
 pub const WriteContext = struct {
     allocator: Allocator,
@@ -53,7 +53,7 @@ pub fn renderDocument(allocator: Allocator, doc: Document, writer: std.io.AnyWri
     try render(doc.root, &ctx);
 }
 
-pub fn render(root: Node, ctx: *WriteContext) !void {
+pub fn render(root: Node, ctx: *const WriteContext) !void {
     var it = root.iterator();
 
     while (it.next()) |node| {
@@ -75,12 +75,12 @@ pub fn render(root: Node, ctx: *WriteContext) !void {
     }
 }
 
-fn getMarkdownElement(node: Node, _: *WriteContext) !MarkdownElement {
+fn getMarkdownElement(node: Node, _: *const WriteContext) !MarkdownElement {
     const name = try node.getName();
     return element_map.get(name) orelse .noOp;
 }
 
-pub fn writeElement(node: Node, element: MarkdownElement, ctx: *WriteContext) anyerror!void {
+pub fn writeElement(node: Node, element: MarkdownElement, ctx: *const WriteContext) anyerror!void {
     switch (element) {
         .bold => try writeBoldElement(node, ctx),
         .italic => try writeItalicElement(node, ctx),
@@ -96,11 +96,11 @@ pub fn writeElement(node: Node, element: MarkdownElement, ctx: *WriteContext) an
     }
 }
 
-pub fn writeUnderlineElement(node: Node, ctx: *WriteContext) anyerror!void {
+pub fn writeUnderlineElement(node: Node, ctx: *const WriteContext) anyerror!void {
     try render(node, ctx);
 }
 
-pub fn writeNoOpElement(node: Node, ctx: *WriteContext) anyerror!void {
+pub fn writeNoOpElement(node: Node, ctx: *const WriteContext) anyerror!void {
     // output the bbcode then render children
     try ctx.writer.writeAll(node.raw);
     try render(node, ctx);
@@ -108,7 +108,7 @@ pub fn writeNoOpElement(node: Node, ctx: *WriteContext) anyerror!void {
     logger.warn("Unsupported bbcode tag: {s}", .{node.raw});
 }
 
-pub fn writeListElement(node: Node, ctx: *WriteContext) anyerror!void {
+pub fn writeListElement(node: Node, ctx: *const WriteContext) anyerror!void {
     // bbcode lists will be nested pairs of [*] and text
     // because [*] don't have closing tags
     // e.g.
@@ -155,42 +155,42 @@ pub fn writeListElement(node: Node, ctx: *WriteContext) anyerror!void {
     }
 }
 
-pub fn writeTextElement(node: Node, ctx: *WriteContext) anyerror!void {
+pub fn writeTextElement(node: Node, ctx: *const WriteContext) anyerror!void {
     try ctx.writer.writeAll(try node.getText());
 }
 
-pub fn writeListItemElement(node: Node, ctx: *WriteContext) anyerror!void {
+pub fn writeListItemElement(node: Node, ctx: *const WriteContext) anyerror!void {
     try render(node, ctx);
 }
 
-pub fn writeHorizontalRuleElement(_: Node, ctx: *WriteContext) !void {
+pub fn writeHorizontalRuleElement(_: Node, ctx: *const WriteContext) !void {
     try ctx.writer.writeAll("\n---\n");
 }
 
-pub fn writeBlockQuoteElement(node: Node, ctx: *WriteContext) !void {
+pub fn writeBlockQuoteElement(node: Node, ctx: *const WriteContext) !void {
     try ctx.writer.writeAll("> ");
     try render(node, ctx);
 }
 
-pub fn writeBoldElement(node: Node, ctx: *WriteContext) !void {
+pub fn writeBoldElement(node: Node, ctx: *const WriteContext) !void {
     try ctx.writer.writeAll("**");
     try render(node, ctx);
     try ctx.writer.writeAll("**");
 }
 
-pub fn writeItalicElement(node: Node, ctx: *WriteContext) !void {
+pub fn writeItalicElement(node: Node, ctx: *const WriteContext) !void {
     try ctx.writer.writeAll("*");
     try render(node, ctx);
     try ctx.writer.writeAll("*");
 }
 
-pub fn writeCodeElement(node: Node, ctx: *WriteContext) !void {
+pub fn writeCodeElement(node: Node, ctx: *const WriteContext) !void {
     try ctx.writer.writeAll("`");
     try render(node, ctx);
     try ctx.writer.writeAll("`");
 }
 
-pub fn writeAllChildrenText(node: Node, ctx: *WriteContext) !void {
+pub fn writeAllChildrenText(node: Node, ctx: *const WriteContext) !void {
     var it = node.iterator();
     while (it.next()) |child| {
         if (child.type == .text) {
@@ -199,7 +199,7 @@ pub fn writeAllChildrenText(node: Node, ctx: *WriteContext) !void {
     }
 }
 
-pub fn writeLinkElement(node: Node, ctx: *WriteContext) !void {
+pub fn writeLinkElement(node: Node, ctx: *const WriteContext) !void {
     if (try node.getValue()) |value| {
         try ctx.writer.writeAll("[");
         try writeAllChildrenText(node, ctx);
@@ -210,7 +210,7 @@ pub fn writeLinkElement(node: Node, ctx: *WriteContext) !void {
     }
 }
 
-pub fn writeEmailElement(node: Node, ctx: *WriteContext) !void {
+pub fn writeEmailElement(node: Node, ctx: *const WriteContext) !void {
     if (try node.getValue()) |value| {
         try ctx.writer.writeAll("[");
         try writeAllChildrenText(node, ctx);
