@@ -24,13 +24,18 @@ pub const Options = struct {
 /// Args:
 ///   bbcode: BBCode string to parse
 pub fn load(allocator: Allocator, reader: std.io.AnyReader, options: Options) !Document {
-    var tokens = try tokenizer.tokenize(allocator, reader, options.tokenizer_options orelse .{
-        .verbatim_tags = options.verbatim_tags,
-    });
+    var tokenizer_options: tokenizer.Options = options.tokenizer_options orelse .{};
+    var parser_options: parser.Options = options.parser_options orelse .{};
+
+    if (options.verbatim_tags) |vt| {
+        tokenizer_options.verbatim_tags = vt;
+        parser_options.verbatim_tags = vt;
+    }
+
+    var tokens = try tokenizer.tokenize(allocator, reader, tokenizer_options);
     defer tokens.deinit(allocator);
-    return try parser.parse(allocator, tokens, options.parser_options orelse .{
-        .verbatim_tags = options.verbatim_tags,
-    });
+
+    return try parser.parse(allocator, tokens, parser_options);
 }
 
 pub fn loadFromBuffer(allocator: Allocator, bbcode: []const u8, options: Options) !Document {
