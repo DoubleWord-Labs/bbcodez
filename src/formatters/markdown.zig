@@ -21,6 +21,7 @@ pub const MarkdownElement = enum {
     blockquote,
     list,
     listItem,
+    underline,
     noOp,
 };
 
@@ -35,6 +36,7 @@ const element_map = std.StaticStringMap(MarkdownElement).initComptime(&.{
     .{ "quote", .blockquote },
     .{ "list", .list },
     .{ "*", .listItem },
+    .{ "u", .underline },
 });
 
 pub fn renderDocument(allocator: Allocator, doc: Document, writer: std.io.AnyWriter, options: Options) !void {
@@ -64,10 +66,7 @@ pub fn render(root: Node, ctx: *WriteContext) !void {
 
                 try writeElement(node, markdown_element, ctx);
             },
-            .text => {
-                const text = try node.getText();
-                try ctx.writer.writeAll(text);
-            },
+            .text => try writeTextElement(node, ctx),
             .document => {},
         }
     }
@@ -89,8 +88,21 @@ pub fn writeElement(node: Node, element: MarkdownElement, ctx: *WriteContext) an
         .horizontalRule => try writeHorizontalRuleElement(node, ctx),
         .list => try writeListElement(node, ctx),
         .listItem => try writeListItemElement(node, ctx),
-        .noOp => try render(node, ctx),
+        .underline => try writeUnderlineElement(node, ctx),
+        .noOp => try writeNoOpElement(node, ctx),
     }
+}
+
+pub fn writeUnderlineElement(node: Node, ctx: *WriteContext) anyerror!void {
+    try render(node, ctx);
+}
+
+pub fn writeNoOpElement(node: Node, ctx: *WriteContext) anyerror!void {
+    // output the bbcode then render children
+    try ctx.writer.writeAll(node.raw);
+    try render(node, ctx);
+
+    logger.warn("Unsupported bbcode tag: {s}", .{node.raw});
 }
 
 pub fn writeListElement(node: Node, ctx: *WriteContext) anyerror!void {
@@ -122,15 +134,15 @@ pub fn writeListElement(node: Node, ctx: *WriteContext) anyerror!void {
     while (try walker.next()) |child| {
         switch (child.value) {
             .element => |el| {
-                const md_type = element_map.get(el.name) orelse .noOp;
-                if (md_type == .listItem) {
-                    i += 1;
-                    try ctx.writer.print("{d}. ", .{i});
+                if (element_map.get(el.name)) |md_type| {
+                    if (md_type == .listItem) {
+                        i += 1;
+                        try ctx.writer.print("{d}. ", .{i});
+                    }
                 }
             },
             .text => |v| {
-                try ctx.writer.writeAll(v);
-
+                try writeTextElement(child, ctx);
                 if (v[v.len - 1] != '\n') {
                     try ctx.writer.writeByte('\n');
                 }
@@ -138,6 +150,10 @@ pub fn writeListElement(node: Node, ctx: *WriteContext) anyerror!void {
             else => {},
         }
     }
+}
+
+pub fn writeTextElement(node: Node, ctx: *WriteContext) anyerror!void {
+    try ctx.writer.writeAll(try node.getText());
 }
 
 pub fn writeListItemElement(node: Node, ctx: *WriteContext) anyerror!void {
@@ -240,7 +256,7 @@ test render {
 const Allocator = std.mem.Allocator;
 const Node = @import("../Node.zig");
 const Document = @import("../Document.zig");
-const StringHashMap = std.StringHashMap;
 
 const std = @import("std");
 const testing = std.testing;
+const logger = std.log.scoped(.markdown_formatter);

@@ -1,9 +1,5 @@
-const default_verbatim_tags = &[_][]const u8{
-    "code",
-};
-
 pub const Options = struct {
-    verbatim_tags: ?[][]const u8 = @constCast(default_verbatim_tags),
+    verbatim_tags: ?[]const []const u8 = shared.default_verbatim_tags,
     equals_required_in_parameters: bool = true,
 };
 
@@ -43,6 +39,7 @@ pub const TokenResult = struct {
         type: TokenType,
         name: []const u8,
         value: ?[]const u8 = null,
+        raw: []const u8,
     };
 
     buffer: std.ArrayListUnmanaged(u8) = .empty,
@@ -97,6 +94,7 @@ pub const TokenResult = struct {
                 .type = token_type,
                 .name = self.tokens.buffer.items[name_start..name_end],
                 .value = value,
+                .raw = self.tokens.buffer.items[token_location.base.start..token_location.base.end],
             };
 
             self.index += 1;
@@ -312,13 +310,11 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
                 },
                 // element parameter
                 ' ' => {
-                    if (last_byte == ' ') {
-                        continue;
-                    }
-
-                    if (state == .element) {
-                        param_start = current + 1;
-                        state = .elementWithParameter;
+                    if (last_byte != ' ') {
+                        if (state == .element) {
+                            param_start = current + 1;
+                            state = .elementWithParameter;
+                        }
                     }
                 },
                 '=' => {
@@ -1011,7 +1007,29 @@ test "deeply nested tags" {
     try testing.expectEqual(null, iterator.next());
 }
 
+test "hypenated parameter" {
+    const bbcode = "[gdscript skip-lint][/gdscript]";
+
+    var tokens = try tokenizeBuffer(testing.allocator, bbcode, .{
+        .equals_required_in_parameters = false,
+    });
+    defer tokens.deinit(testing.allocator);
+
+    var it = tokens.iterator();
+    const gdscript_open = it.next().?;
+    try testing.expectEqual(.element, gdscript_open.type);
+    try testing.expectEqualStrings("gdscript", gdscript_open.name);
+    try testing.expectEqualStrings("skip-lint", gdscript_open.value.?);
+
+    const gdscript_close = it.next().?;
+    try testing.expectEqual(.closingElement, gdscript_close.type);
+    try testing.expectEqualStrings("gdscript", gdscript_close.name);
+
+    try testing.expectEqual(null, it.next());
+}
+
 const StringHashMap = std.StringHashMapUnmanaged;
 
 const std = @import("std");
 const testing = std.testing;
+const shared = @import("shared.zig");

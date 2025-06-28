@@ -25,6 +25,7 @@ parent: ?*Node = null,
 type: Type,
 value: Value,
 children: ArrayList(Node) = .empty,
+raw: []const u8,
 
 pub fn deinit(self: *Node, allocator: Allocator) void {
     switch (self.value) {
@@ -41,8 +42,46 @@ pub fn appendChild(self: *Node, allocator: Allocator, child: Node) !void {
 }
 
 pub fn getLastChild(self: *Node) !?*Node {
-    switch (self.value) {
+    switch (self.type) {
         inline .document, .element => return &self.children.items[self.children.items.len - 1],
+        else => return error.InvalidOperation,
+    }
+}
+
+pub fn childrenOfType(self: Node, allocator: Allocator, ty: Type) !ArrayList(Node) {
+    switch (self.type) {
+        inline .document, .element => {
+            var result = try ArrayList(Node).initCapacity(allocator, self.children.items.len);
+            for (self.children.items) |child| {
+                if (child.type == ty) try result.append(allocator, child);
+            }
+            return result;
+        },
+        else => return error.InvalidOperation,
+    }
+}
+
+pub fn lastChildOfType(self: *Node, ty: Type) !?*Node {
+    switch (self.type) {
+        inline .document, .element => {
+            var i: usize = self.children.items.len - 1;
+            while (i >= 0) : (i -= 1) {
+                if (self.children.items[i].type == ty) return &self.children.items[i];
+            }
+            return null;
+        },
+        else => return error.InvalidOperation,
+    }
+}
+
+pub fn firstChildOfType(self: *Node, ty: Type) !?*Node {
+    switch (self.type) {
+        inline .document, .element => {
+            for (self.children.items) |*child| {
+                if (child.type == ty) return child;
+            }
+            return null;
+        },
         else => return error.InvalidOperation,
     }
 }
@@ -157,9 +196,9 @@ pub const NodePrinter = struct {
 /// Contains allocated memory that must be freed using `deinit()`.
 pub const Parameter = struct {
     /// Parameter name/key
-    key: []u8,
+    key: []const u8,
     /// Parameter value
-    value: []u8,
+    value: []const u8,
 
     /// Frees the allocated memory for both key and value.
     ///

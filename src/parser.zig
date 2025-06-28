@@ -1,4 +1,6 @@
-pub const Options = struct {};
+pub const Options = struct {
+    verbatim_tags: ?[]const []const u8 = shared.default_verbatim_tags,
+};
 
 pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult, options: Options) !Document {
     _ = options;
@@ -15,28 +17,39 @@ pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult, options: Options
     var current = &doc.root;
 
     while (it.next()) |token| {
+        const token_raw = try a_allocator.dupe(u8, token.raw);
+
         switch (token.type) {
             .text => {
+                const text_value = token.name;
+
                 const text_node = Node{
                     .type = .text,
                     .value = .{
-                        .text = try a_allocator.dupe(u8, token.name),
+                        .text = try a_allocator.dupe(u8, text_value),
                     },
                     .parent = current,
+                    .raw = token_raw,
                 };
 
                 try current.appendChild(a_allocator, text_node);
             },
             .element => {
+                const element_name = std.mem.trim(u8, token.name, &std.ascii.whitespace);
+
                 const element_node = Node{
                     .type = .element,
                     .value = .{
                         .element = .{
-                            .name = try a_allocator.dupe(u8, token.name),
-                            .value = if (token.value) |value| try a_allocator.dupe(u8, value) else null,
+                            .name = try a_allocator.dupe(u8, element_name),
+                            .value = if (token.value) |value| try a_allocator.dupe(
+                                u8,
+                                std.mem.trim(u8, value, " \n"),
+                            ) else null,
                         },
                     },
                     .parent = current,
+                    .raw = token_raw,
                 };
 
                 try current.appendChild(a_allocator, element_node);
@@ -112,11 +125,11 @@ test "complex parsing" {
 }
 
 const testing = std.testing;
-const logger = std.log.scoped(.parser);
 const ArrayList = std.ArrayListUnmanaged;
 const TokenResult = tokenizer.TokenResult;
 
 const std = @import("std");
-const tokenizer = @import("tokenizer.zig");
-const Document = @import("Document.zig");
 const Node = @import("Node.zig");
+const shared = @import("shared.zig");
+const Document = @import("Document.zig");
+const tokenizer = @import("tokenizer.zig");

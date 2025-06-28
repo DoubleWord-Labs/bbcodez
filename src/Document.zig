@@ -7,9 +7,11 @@ arena: std.heap.ArenaAllocator,
 root: Node = .{
     .type = .document,
     .value = .document,
+    .raw = "",
 },
 
 pub const Options = struct {
+    verbatim_tags: ?[]const []const u8 = shared.default_verbatim_tags,
     tokenizer_options: ?tokenizer.Options = null,
     parser_options: ?parser.Options = null,
 };
@@ -22,9 +24,13 @@ pub const Options = struct {
 /// Args:
 ///   bbcode: BBCode string to parse
 pub fn load(allocator: Allocator, reader: std.io.AnyReader, options: Options) !Document {
-    var tokens = try tokenizer.tokenize(allocator, reader, options.tokenizer_options orelse .{});
+    var tokens = try tokenizer.tokenize(allocator, reader, options.tokenizer_options orelse .{
+        .verbatim_tags = options.verbatim_tags,
+    });
     defer tokens.deinit(allocator);
-    return try parser.parse(allocator, tokens, options.parser_options orelse .{});
+    return try parser.parse(allocator, tokens, options.parser_options orelse .{
+        .verbatim_tags = options.verbatim_tags,
+    });
 }
 
 pub fn loadFromBuffer(allocator: Allocator, bbcode: []const u8, options: Options) !Document {
@@ -177,4 +183,5 @@ const Document = @This();
 const Node = @import("Node.zig");
 const Allocator = std.mem.Allocator;
 const parser = @import("parser.zig");
+const shared = @import("shared.zig");
 const tokenizer = @import("tokenizer.zig");
