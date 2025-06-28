@@ -5,10 +5,12 @@ pub const WriteContext = struct {
     document: Document,
     writer: std.io.AnyWriter,
     write_element_fn: ?WriteElementFunction = null,
+    user_data: ?*anyopaque = null,
 };
 
 pub const Options = struct {
     write_element_fn: ?WriteElementFunction = null,
+    user_data: ?*anyopaque = null,
 };
 
 pub const MarkdownElement = enum {
@@ -45,6 +47,7 @@ pub fn renderDocument(allocator: Allocator, doc: Document, writer: std.io.AnyWri
         .document = doc,
         .writer = writer,
         .write_element_fn = options.write_element_fn,
+        .user_data = options.user_data,
     };
 
     try render(doc.root, &ctx);
