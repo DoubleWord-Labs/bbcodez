@@ -48,19 +48,6 @@ pub fn getLastChild(self: *Node) !?*Node {
     }
 }
 
-pub fn childrenOfType(self: Node, allocator: Allocator, ty: Type) !ArrayList(Node) {
-    switch (self.type) {
-        inline .document, .element => {
-            var result = try ArrayList(Node).initCapacity(allocator, self.children.items.len);
-            for (self.children.items) |child| {
-                if (child.type == ty) try result.append(allocator, child);
-            }
-            return result;
-        },
-        else => return error.InvalidOperation,
-    }
-}
-
 pub fn lastChildOfType(self: *Node, ty: Type) !?*Node {
     switch (self.type) {
         inline .document, .element => {
