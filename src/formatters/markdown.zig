@@ -54,7 +54,7 @@ pub fn renderDocument(allocator: Allocator, doc: Document, writer: std.io.AnyWri
 }
 
 pub fn render(root: Node, ctx: *const WriteContext) !void {
-    var it = root.iterator();
+    var it = root.iterator(.{});
 
     while (it.next()) |node| {
         if (ctx.write_element_fn) |cb| {
@@ -200,11 +200,9 @@ pub fn writeCodeElement(node: Node, ctx: *const WriteContext) !void {
 }
 
 pub fn writeAllChildrenText(node: Node, ctx: *const WriteContext) !void {
-    var it = node.iterator();
+    var it = node.iterator(.{ .type = .text });
     while (it.next()) |child| {
-        if (child.type == .text) {
-            try ctx.writer.writeAll(try child.getText());
-        }
+        try ctx.writer.writeAll(try child.getText());
     }
 }
 

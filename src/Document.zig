@@ -109,7 +109,7 @@ pub const Walker = struct {
 
         try walker.stack.append(allocator, .{
             .node = document.root,
-            .iterator = document.root.iterator(),
+            .iterator = document.root.iterator(.{}),
         });
 
         return walker;
@@ -166,7 +166,7 @@ pub const Walker = struct {
                     .element => {
                         try self.stack.append(self.allocator, .{
                             .node = node,
-                            .iterator = node.iterator(),
+                            .iterator = node.iterator(.{}),
                         });
                     },
                     else => return node,

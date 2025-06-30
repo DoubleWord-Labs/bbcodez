@@ -225,13 +225,20 @@ pub const Parameter = struct {
 };
 
 pub const Iterator = struct {
+    type: ?Type = null,
     node: Node,
     index: usize,
 
     pub fn next(self: *Iterator) ?Node {
         if (self.index >= self.node.children.items.len) return null;
         const child = self.node.children.items[self.index];
+
         self.index += 1;
+
+        if (self.type) |@"type"| if (@"type" != child.type) {
+            return self.next();
+        };
+
         return child;
     }
 
@@ -240,8 +247,9 @@ pub const Iterator = struct {
     }
 };
 
-pub fn iterator(self: Node) Iterator {
+pub fn iterator(self: Node, opts: struct { type: ?Type = null }) Iterator {
     return Iterator{
+        .type = opts.type,
         .node = self,
         .index = 0,
     };
