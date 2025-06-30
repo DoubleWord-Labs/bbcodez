@@ -156,7 +156,16 @@ pub fn writeListElement(node: Node, ctx: *const WriteContext) anyerror!void {
 }
 
 pub fn writeTextElement(node: Node, ctx: *const WriteContext) anyerror!void {
-    try ctx.writer.writeAll(try node.getText());
+    const text = try std.mem.replaceOwned(
+        u8,
+        ctx.allocator,
+        try node.getText(),
+        "\n",
+        "\n\n",
+    );
+    defer ctx.allocator.free(text);
+
+    try ctx.writer.writeAll(text);
 }
 
 pub fn writeListItemElement(node: Node, ctx: *const WriteContext) anyerror!void {
@@ -242,11 +251,17 @@ test render {
 
     const expected_markdown =
         \\**Hello, World!**
+        \\
         \\*This is an italicized text*
+        \\
         \\Underlined text
+        \\
         \\[Link](https://example.com)
+        \\
         \\[Email](mailto:user@example.com)
+        \\
         \\`This is a code block`
+        \\
         \\1. one
         \\2. two
         \\3. three

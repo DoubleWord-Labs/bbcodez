@@ -1,10 +1,19 @@
+pub const IsSelfClosingFunction = *const fn (user_data: ?*anyopaque, token: Token) bool;
+
 pub const Options = struct {
     verbatim_tags: ?[]const []const u8 = shared.default_verbatim_tags,
+    is_self_closing_fn: ?IsSelfClosingFunction = null,
+    user_data: ?*anyopaque = null,
 };
 
-pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult, options: Options) !Document {
-    _ = options;
+fn isSelfClosing(token: Token, options: Options) bool {
+    if (options.is_self_closing_fn) |is_self_closing| {
+        return is_self_closing(options.user_data, token);
+    }
+    return false;
+}
 
+pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult, options: Options) !Document {
     var doc = Document{
         .arena = std.heap.ArenaAllocator.init(allocator),
     };
@@ -53,8 +62,10 @@ pub fn parse(allocator: std.mem.Allocator, tokens: TokenResult, options: Options
                 };
 
                 try current.appendChild(a_allocator, element_node);
-                try stack.append(allocator, token.name);
-                current = try current.getLastChild() orelse std.debug.panic("getLastChild() returned null", .{});
+                if (!isSelfClosing(token, options)) {
+                    current = try current.getLastChild() orelse std.debug.panic("getLastChild() returned null", .{});
+                    try stack.append(allocator, token.name);
+                }
             },
             .closingElement => {
                 _ = stack.pop();
@@ -125,6 +136,7 @@ test "complex parsing" {
 }
 
 const testing = std.testing;
+const Token = tokenizer.TokenResult.Token;
 const ArrayList = std.ArrayListUnmanaged;
 const TokenResult = tokenizer.TokenResult;
 

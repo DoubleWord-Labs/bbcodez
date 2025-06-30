@@ -131,29 +131,41 @@ pub fn print(self: Node, writer: anytype, depth: usize) !void {
         .depth = depth,
     };
 
+    const has_children = self.children.items.len > 0;
+
     switch (self.type) {
         .document => {
-            try printer.writeLine("<document>");
+            if (has_children) {
+                try printer.writeLine("<document>");
+            } else {
+                try printer.writeLine("<document />");
+            }
         },
         .element => {
-            try printer.printLine("<{s}>", .{try self.getName()});
+            if (has_children) {
+                try printer.printLine("<{s}>", .{try self.getName()});
+            } else {
+                try printer.printLine("<{s} />", .{try self.getName()});
+            }
         },
         .text => {
             try printer.writeLine(try self.getText());
         },
     }
 
-    var it = self.iterator();
-    while (it.next()) |node| {
-        try node.print(writer, depth + 1);
-    }
+    if (has_children) {
+        var it = self.iterator();
+        while (it.next()) |node| {
+            try node.print(writer, depth + 1);
+        }
 
-    switch (self.type) {
-        .document => try printer.writeLine("</document>"),
-        .element => {
-            try printer.printLine("</{s}>", .{try self.getName()});
-        },
-        .text => {},
+        switch (self.type) {
+            .document => try printer.writeLine("</document>"),
+            .element => {
+                try printer.printLine("</{s}>", .{try self.getName()});
+            },
+            .text => {},
+        }
     }
 }
 

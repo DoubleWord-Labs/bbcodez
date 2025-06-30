@@ -9,11 +9,13 @@ root: Node = .{
     .value = .document,
     .raw = "",
 },
+user_data: ?*anyopaque = null,
 
 pub const Options = struct {
     verbatim_tags: ?[]const []const u8 = shared.default_verbatim_tags,
     tokenizer_options: ?tokenizer.Options = null,
     parser_options: ?parser.Options = null,
+    user_data: ?*anyopaque = null,
 };
 
 /// Parses BBCode text and builds the internal tree structure.
@@ -35,7 +37,10 @@ pub fn load(allocator: Allocator, reader: std.io.AnyReader, options: Options) !D
     var tokens = try tokenizer.tokenize(allocator, reader, tokenizer_options);
     defer tokens.deinit(allocator);
 
-    return try parser.parse(allocator, tokens, parser_options);
+    var document = try parser.parse(allocator, tokens, parser_options);
+    document.user_data = options.user_data;
+
+    return document;
 }
 
 pub fn loadFromBuffer(allocator: Allocator, bbcode: []const u8, options: Options) !Document {
