@@ -255,6 +255,18 @@ pub const TokenResult = struct {
     }
 };
 
+/// Tokenizes BBCode text from a string buffer.
+///
+/// Convenience function that wraps the string buffer in a FixedBufferStream
+/// and calls `tokenize()`. This is useful when you have BBCode text in memory
+/// as a string and want to tokenize it directly without creating a reader.
+///
+/// Args:
+///   allocator: Memory allocator for the token buffer and locations
+///   buffer: BBCode string buffer to tokenize
+///   options: Tokenization configuration options
+/// Returns: TokenResult containing all parsed tokens
+/// Errors: OutOfMemory if allocation fails during tokenization
 pub fn tokenizeBuffer(allocator: std.mem.Allocator, buffer: []const u8, options: Options) !TokenResult {
     var fbs = std.io.fixedBufferStream(buffer);
 

@@ -92,6 +92,18 @@ pub fn load(allocator: Allocator, reader: std.io.AnyReader, options: Options) !D
     return document;
 }
 
+/// Parses BBCode text from a string buffer.
+///
+/// Convenience function that wraps the string in a FixedBufferStream
+/// and calls `load()`. This is the most common way to parse BBCode
+/// from a string literal or buffer.
+///
+/// Args:
+///   allocator: Memory allocator for the document
+///   bbcode: BBCode string to parse
+///   options: Document loading configuration options
+/// Returns: A new Document containing the parsed tree structure
+/// Errors: OutOfMemory or any parsing errors from `load()`
 pub fn loadFromBuffer(allocator: Allocator, bbcode: []const u8, options: Options) !Document {
     var fbs = std.io.fixedBufferStream(bbcode);
     return try load(allocator, fbs.reader().any(), options);
@@ -105,6 +117,17 @@ pub fn deinit(self: Document) void {
     self.arena.deinit();
 }
 
+/// Formats the document for display using Zig's std.fmt system.
+///
+/// This enables the document to be used with `std.debug.print()`.
+/// The output shows the document tree structure in a debug-friendly
+/// format.
+///
+/// Args:
+///   fmt: Format string (unused)
+///   options: Format options (unused)
+///   writer: Output writer for the formatted text
+/// Errors: Any errors from the writer
 pub fn format(self: Document, fmt: anytype, options: std.fmt.FormatOptions, writer: anytype) !void {
     _ = fmt;
     _ = options;
@@ -112,10 +135,30 @@ pub fn format(self: Document, fmt: anytype, options: std.fmt.FormatOptions, writ
     try self.print(writer);
 }
 
+/// Prints a debug representation of the document tree.
+///
+/// Outputs the entire document structure as formatted text showing
+/// the hierarchy of nodes, their types, and content. Useful for
+/// debugging and understanding the parsed structure.
+///
+/// Args:
+///   writer: Output writer for the debug text
+/// Errors: Any errors from the writer
 pub fn print(self: Document, writer: anytype) !void {
     try self.root.print(writer, 0);
 }
 
+/// Creates a walker for traversing the document tree.
+///
+/// The walker provides an iterator interface for visiting all nodes
+/// in the document in the specified traversal order. Use this for
+/// processing or analyzing the entire document structure.
+///
+/// Args:
+///   allocator: Memory allocator for the walker's internal state
+///   order: Traversal order (.pre for pre-order, .post for post-order)
+/// Returns: A new Walker for iterating through nodes
+/// Errors: OutOfMemory if walker initialization fails
 pub fn walk(self: Document, allocator: Allocator, order: Walker.TraversalOrder) !Walker {
     return Walker.init(self, allocator, order);
 }

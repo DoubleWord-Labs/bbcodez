@@ -27,6 +27,15 @@ value: Value,
 children: ArrayList(Node) = .empty,
 raw: []const u8,
 
+/// Frees resources associated with this node.
+///
+/// Recursively frees all child nodes and their associated memory.
+/// Must be called when done with the node to prevent memory leaks.
+/// Only nodes that can have children (document and element nodes)
+/// perform actual cleanup.
+///
+/// Args:
+///   allocator: The same allocator used to create child nodes
 pub fn deinit(self: *Node, allocator: Allocator) void {
     switch (self.value) {
         inline .document, .element => self.children.deinit(allocator),
@@ -123,6 +132,13 @@ pub fn getName(self: Node) ![]const u8 {
     }
 }
 
+/// Gets the text content of a text node.
+///
+/// Only works with text nodes. For other node types, returns an error.
+/// This is the primary way to extract plain text content from the parse tree.
+///
+/// Returns: The text content as a string slice
+/// Errors: InvalidNodeType if called on a non-text node
 pub fn getText(self: Node) ![]const u8 {
     if (self.type == .text) {
         return self.value.text;
@@ -131,6 +147,14 @@ pub fn getText(self: Node) ![]const u8 {
     return error.InvalidNodeType;
 }
 
+/// Gets the parameter value of an element node.
+///
+/// For element nodes with parameters like [url=http://example.com] or [color=red],
+/// returns the value part (e.g., "http://example.com" or "red"). Returns null
+/// if the element has no parameter value.
+///
+/// Returns: The parameter value as a string slice, or null if no value
+/// Errors: InvalidNodeType if called on a non-element node
 pub fn getValue(self: Node) !?[]const u8 {
     if (self.type == .element) {
         return self.value.element.value;
@@ -139,6 +163,17 @@ pub fn getValue(self: Node) !?[]const u8 {
     return error.InvalidNodeType;
 }
 
+/// Formats the node for display using Zig's std.fmt system.
+///
+/// This enables the node to be used with `std.debug.print()`.
+/// The output shows the node and its children in a
+/// debug-friendly tree format.
+///
+/// Args:
+///   fmt: Format string (unused)
+///   options: Format options (unused)
+///   writer: Output writer for the formatted text
+/// Errors: Any errors from the writer
 pub fn format(self: Node, fmt: anytype, options: std.fmt.FormatOptions, writer: anytype) !void {
     _ = fmt;
     _ = options;
@@ -146,6 +181,16 @@ pub fn format(self: Node, fmt: anytype, options: std.fmt.FormatOptions, writer: 
     try self.print(writer, 0);
 }
 
+/// Prints a debug representation of the node and its children.
+///
+/// Outputs the node structure as formatted text showing the hierarchy,
+/// node types, and content with proper indentation based on depth.
+/// Recursively prints all child nodes.
+///
+/// Args:
+///   writer: Output writer for the debug text
+///   depth: Current indentation depth (0 for root level)
+/// Errors: Any errors from the writer
 pub fn print(self: Node, writer: anytype, depth: usize) !void {
     var printer = NodePrinter{
         .writer = writer,
