@@ -1,15 +1,102 @@
+//! Markdown formatter for BBCode documents.
+//!
+//! This module provides functionality to convert BBCode documents into Markdown
+//! format. It supports the most common BBCode tags and converts them to their
+//! Markdown equivalents where possible.
+//!
+//! ## Supported Conversions
+//! - `[b]text[/b]` → `**text**`
+//! - `[i]text[/i]` → `*text*`
+//! - `[url=link]text[/url]` → `[text](link)`
+//! - `[email=addr]text[/email]` → `[text](mailto:addr)`
+//! - `[code]text[/code]` → `` `text` ``
+//! - `[list][*]item1[*]item2[/list]` → Numbered lists
+//! - `[quote]text[/quote]` → `> text`
+//! - `[hr]` or `[line]` → `---`
+//!
+//! ## Basic Usage
+//! ```zig
+//! const markdown = @import("formatters/markdown.zig");
+//!
+//! var document = try Document.loadFromBuffer(allocator, bbcode_text, .{});
+//! defer document.deinit();
+//!
+//! var output = std.ArrayList(u8).init(allocator);
+//! defer output.deinit();
+//!
+//! try markdown.renderDocument(allocator, document, output.writer(), .{});
+//! ```
+//!
+//! ## Custom Element Handling
+//!
+//! You can provide custom rendering logic for specific elements using callbacks:
+//!
+//! ```zig
+//! fn customElementHandler(node: Node, ctx: ?*const anyopaque) !bool {
+//!     const name = try node.getName();
+//!     if (std.mem.eql(u8, name, "custom")) {
+//!         // Handle custom element
+//!         return true; // Element was handled
+//!     }
+//!     return false; // Use default handling
+//! }
+//!
+//! try markdown.renderDocument(allocator, document, writer, .{
+//!     .write_element_fn = customElementHandler,
+//! });
+//! ```
+
+/// Callback function type for custom element rendering.
+///
+/// Called for each node during rendering to allow custom handling of specific
+/// elements. Return true to indicate the element was handled and should be
+/// skipped by the default renderer, false to use the default rendering logic.
+///
+/// This enables extending the formatter with custom BBCode tags or overriding
+/// the default behavior for existing tags.
+///
+/// Args:
+///   node: The Node being rendered
+///   ctx: Rendering context containing writer and other state
+/// Returns: True if element was handled, false to use default rendering
+/// Errors: Any errors from writing to the output stream
 pub const WriteElementFunction = *const fn (node: Node, ctx: ?*const anyopaque) anyerror!bool;
 
+/// Context passed to element rendering functions.
+///
+/// Contains the state needed for rendering operations, including the output
+/// writer, document being processed, and any custom user data. This context
+/// is used internally by the rendering system and passed to custom element
+/// handlers.
 pub const WriteContext = struct {
+    /// Memory allocator for temporary operations during rendering
     allocator: Allocator,
+    /// The document being rendered
     document: Document,
+    /// Output writer for the generated Markdown
     writer: std.io.AnyWriter,
+    /// Optional custom element handler function
     write_element_fn: ?WriteElementFunction = null,
+    /// Optional user data for custom handlers
     user_data: ?*anyopaque = null,
 };
 
+/// Configuration options for Markdown rendering.
+///
+/// Controls how the BBCode document is converted to Markdown format,
+/// including custom element handling and user data for callbacks.
 pub const Options = struct {
+    /// Optional callback for custom element rendering.
+    ///
+    /// If provided, this function is called for each element before the
+    /// default rendering logic. Allows customization of how specific
+    /// elements are converted to Markdown or adding support for custom tags.
     write_element_fn: ?WriteElementFunction = null,
+
+    /// Optional user data passed to callback functions.
+    ///
+    /// This data is available in the WriteContext and can be used by
+    /// custom element handlers for application-specific rendering logic.
     user_data: ?*anyopaque = null,
 };
 
@@ -41,6 +128,24 @@ const element_map = std.StaticStringMap(MarkdownElement).initComptime(&.{
     .{ "u", .underline },
 });
 
+/// Renders a BBCode document as Markdown text.
+///
+/// Converts the entire document tree to Markdown format, writing the output
+/// to the provided writer. Uses the default conversion rules unless custom
+/// element handlers are provided in the options.
+///
+/// The rendering process walks the document tree and converts each node
+/// according to its type:
+/// - Text nodes are written directly (with newline formatting)
+/// - Element nodes are converted to their Markdown equivalents
+/// - Unknown elements are left as-is with a warning
+///
+/// Args:
+///   allocator: Memory allocator for temporary operations
+///   doc: The Document to render
+///   writer: Output writer for the Markdown text
+///   options: Rendering configuration options
+/// Errors: Any writer errors or allocation failures during rendering
 pub fn renderDocument(allocator: Allocator, doc: Document, writer: std.io.AnyWriter, options: Options) !void {
     var ctx: WriteContext = .{
         .allocator = allocator,
@@ -53,6 +158,16 @@ pub fn renderDocument(allocator: Allocator, doc: Document, writer: std.io.AnyWri
     try render(doc.root, &ctx);
 }
 
+/// Renders a node and its children recursively.
+///
+/// This is the core rendering function that processes a node and all its
+/// children, converting them to Markdown format. It handles the dispatch
+/// to appropriate rendering functions based on node type.
+///
+/// Args:
+///   root: The root node to render
+///   ctx: Write context containing output writer and configuration
+/// Errors: Any errors from writing to the output stream
 pub fn render(root: Node, ctx: *const WriteContext) !void {
     var it = root.iterator(.{});
 
@@ -80,6 +195,17 @@ fn getMarkdownElement(node: Node, _: *const WriteContext) !MarkdownElement {
     return element_map.get(name) orelse .noOp;
 }
 
+/// Writes a specific BBCode element as its Markdown equivalent.
+///
+/// Dispatches to the appropriate specialized writing function based on the
+/// element type. Each element type has its own conversion logic to produce
+/// the correct Markdown output.
+///
+/// Args:
+///   node: The element node to render
+///   element: The classified Markdown element type
+///   ctx: Write context containing output writer
+/// Errors: Any errors from the specialized writing functions
 pub fn writeElement(node: Node, element: MarkdownElement, ctx: *const WriteContext) anyerror!void {
     switch (element) {
         .bold => try writeBoldElement(node, ctx),

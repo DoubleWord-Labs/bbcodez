@@ -11,10 +11,59 @@ root: Node = .{
 },
 user_data: ?*anyopaque = null,
 
+/// Configuration options for document loading.
+///
+/// Controls various aspects of how BBCode text is parsed and processed
+/// into the document tree structure. These options provide fine-grained
+/// control over tokenization, parsing, and document behavior.
+///
+/// ## Example
+/// ```zig
+/// var document = try Document.loadFromBuffer(allocator, bbcode_text, .{
+///     .verbatim_tags = &[_][]const u8{ "code", "pre", "literal" },
+///     .tokenizer_options = .{ .equals_required_in_parameters = false },
+///     .parser_options = .{ .is_self_closing_fn = customSelfClosingFn },
+///     .user_data = &my_context,
+/// });
+/// ```
 pub const Options = struct {
+    /// Tags that should be treated as verbatim (no nested parsing).
+    ///
+    /// Content inside these tags is preserved exactly as written without
+    /// further BBCode processing. This is useful for code blocks and other
+    /// literal content where BBCode-like syntax should be preserved.
+    ///
+    /// If specified, this overrides the verbatim_tags in both tokenizer_options
+    /// and parser_options to ensure consistency across the parsing pipeline.
+    ///
+    /// Default: `shared.default_verbatim_tags` (includes "code")
     verbatim_tags: ?[]const []const u8 = shared.default_verbatim_tags,
+
+    /// Low-level tokenizer configuration options.
+    ///
+    /// If provided, these options are passed to the tokenizer to control
+    /// how the text is initially processed into tokens. See `tokenizer.Options`
+    /// for available configuration.
+    ///
+    /// Default: null (uses tokenizer defaults)
     tokenizer_options: ?tokenizer.Options = null,
+
+    /// Parser configuration options.
+    ///
+    /// If provided, these options control how tokens are assembled into
+    /// the document tree structure. See `parser.Options` for available
+    /// configuration including self-closing tag callbacks.
+    ///
+    /// Default: null (uses parser defaults)
     parser_options: ?parser.Options = null,
+
+    /// Optional user data attached to the document.
+    ///
+    /// This data is preserved with the document and can be accessed after
+    /// parsing for application-specific purposes. Useful for maintaining
+    /// context during custom processing or callbacks.
+    ///
+    /// Default: null
     user_data: ?*anyopaque = null,
 };
 

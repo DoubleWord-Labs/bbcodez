@@ -1,5 +1,66 @@
+//! BBCode tokenization - converts text into structured tokens.
+//!
+//! This module handles the low-level parsing of BBCode text into tokens that can
+//! be processed by the parser. It recognizes BBCode tags, extracts parameters,
+//! and segments text while preserving the original input for error reporting.
+//!
+//! The tokenizer is the first stage of BBCode processing, converting raw text
+//! into a stream of structured tokens that represent text content, opening tags,
+//! closing tags, and their associated parameters.
+//!
+//! ## Basic Usage
+//!
+//! ```zig
+//! const tokenizer = @import("tokenizer.zig");
+//!
+//! var fbs = std.io.fixedBufferStream("[b]Hello[/b] world");
+//! var tokens = try tokenizer.tokenize(allocator, fbs.reader().any(), .{});
+//! defer tokens.deinit(allocator);
+//!
+//! var it = tokens.iterator();
+//! while (it.next()) |token| {
+//!     switch (token.type) {
+//!         .text => std.debug.print("Text: {s}\n", .{token.name}),
+//!         .element => std.debug.print("Tag: {s}\n", .{token.name}),
+//!         .closingElement => std.debug.print("Closing: {s}\n", .{token.name}),
+//!     }
+//! }
+//! ```
+//!
+//! ## Custom Tokenization
+//!
+//! The tokenizer supports various configuration options for different BBCode
+//! dialects and parsing requirements:
+//!
+//! ```zig
+//! var tokens = try tokenizer.tokenize(allocator, reader, .{
+//!     .verbatim_tags = &[_][]const u8{ "code", "pre" },
+//!     .equals_required_in_parameters = false, // Allow [tag param] syntax
+//! });
+//! ```
+
+/// Configuration options for the tokenizer.
+///
+/// Controls how the tokenizer processes BBCode text and handles various
+/// edge cases and formatting requirements. These options allow customization
+/// for different BBCode dialects and parsing scenarios.
 pub const Options = struct {
+    /// Tags that should be treated as verbatim (no nested parsing).
+    ///
+    /// Content inside these tags is treated as literal text without
+    /// further BBCode processing. This is essential for code blocks and
+    /// other literal content where BBCode-like syntax should be preserved.
+    ///
+    /// Default: `shared.default_verbatim_tags` (includes "code")
     verbatim_tags: ?[]const []const u8 = shared.default_verbatim_tags,
+
+    /// Whether parameter values require an equals sign.
+    ///
+    /// When true, parameters must be in the form [tag=value].
+    /// When false, allows forms like [gdscript skip-lint] where the
+    /// parameter doesn't have an explicit value assignment.
+    ///
+    /// Default: true (strict parameter syntax)
     equals_required_in_parameters: bool = true,
 };
 
@@ -9,6 +70,29 @@ pub const TokenType = enum {
     closingElement,
 };
 
+/// Result of tokenizing BBCode text.
+///
+/// Contains the tokenized representation of BBCode input as a collection
+/// of structured tokens with location information. The tokens preserve
+/// the original input text and provide structured access to BBCode elements.
+///
+/// Use the iterator to process tokens sequentially, or access the raw
+/// buffer and location data for more advanced processing.
+///
+/// ## Example
+/// ```zig
+/// var tokens = try tokenize(allocator, reader, .{});
+/// defer tokens.deinit(allocator);
+///
+/// var it = tokens.iterator();
+/// while (it.next()) |token| {
+///     switch (token.type) {
+///         .text => std.debug.print("Text: {s}\n", .{token.name}),
+///         .element => std.debug.print("Tag: {s}\n", .{token.name}),
+///         .closingElement => std.debug.print("Closing: {s}\n", .{token.name}),
+///     }
+/// }
+/// ```
 pub const TokenResult = struct {
     const Location = struct {
         start: usize,
@@ -52,10 +136,23 @@ pub const TokenResult = struct {
         self.locations.deinit(allocator);
     }
 
+    /// Iterator for processing tokens sequentially.
+    ///
+    /// Provides a convenient way to walk through all tokens in the result.
+    /// Each call to `next()` returns the next token or null when finished.
+    /// The iterator handles the conversion from internal token locations
+    /// to the public Token interface.
     pub const Iterator = struct {
         tokens: TokenResult,
         index: usize = 0,
 
+        /// Returns the next token in the sequence.
+        ///
+        /// Advances the iterator position and returns the token at that position,
+        /// or null if all tokens have been processed. The returned token contains
+        /// the token type, name, optional value, and raw text.
+        ///
+        /// Returns: The next Token or null if iteration is complete
         pub fn next(self: *Iterator) ?Token {
             if (self.index >= self.tokens.locations.items.len) {
                 return null;
@@ -255,6 +352,25 @@ fn getTagName(tag: []const u8) []const u8 {
     return tag[tn_start..tn_end];
 }
 
+/// Tokenizes BBCode text from a reader into structured tokens.
+///
+/// This is the main entry point for tokenization. It reads BBCode text from
+/// the provided reader and produces a TokenResult containing all recognized
+/// tokens with their types, names, values, and location information.
+///
+/// The tokenization process:
+/// 1. Reads input character by character
+/// 2. Recognizes BBCode tag patterns [tag] and [/tag]
+/// 3. Extracts tag names and parameter values
+/// 4. Handles verbatim tags by preserving their content literally
+/// 5. Segments remaining content as text tokens
+///
+/// Args:
+///   allocator: Memory allocator for the token buffer and locations
+///   reader: Input reader containing BBCode text
+///   options: Tokenization configuration options
+/// Returns: TokenResult containing all parsed tokens
+/// Errors: OutOfMemory if allocation fails, or any reader errors
 pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options: Options) !TokenResult {
     var state: State = .text;
     var start: usize = 0;

@@ -34,6 +34,15 @@ pub fn deinit(self: *Node, allocator: Allocator) void {
     }
 }
 
+/// Adds a child node to this node.
+///
+/// The child node becomes owned by this node and will be freed when this
+/// node is deinitialized. Only document and element nodes can have children.
+///
+/// Args:
+///   allocator: Memory allocator for the child list
+///   child: The Node to add as a child
+/// Errors: InvalidOperation if this node type cannot have children
 pub fn appendChild(self: *Node, allocator: Allocator, child: Node) !void {
     switch (self.value) {
         inline .document, .element => try self.children.append(allocator, child),
@@ -41,6 +50,13 @@ pub fn appendChild(self: *Node, allocator: Allocator, child: Node) !void {
     }
 }
 
+/// Gets the last child node of this node.
+///
+/// Returns a pointer to the most recently added child, or an error if this
+/// node type cannot have children.
+///
+/// Returns: Pointer to the last child node
+/// Errors: InvalidOperation if this node type cannot have children
 pub fn getLastChild(self: *Node) !?*Node {
     switch (self.type) {
         inline .document, .element => return &self.children.items[self.children.items.len - 1],
@@ -48,6 +64,15 @@ pub fn getLastChild(self: *Node) !?*Node {
     }
 }
 
+/// Finds the last child of a specific type.
+///
+/// Searches backwards through the children to find the most recent child
+/// of the specified type.
+///
+/// Args:
+///   ty: The node type to search for
+/// Returns: Pointer to the last matching child, or null if none found
+/// Errors: InvalidOperation if this node type cannot have children
 pub fn lastChildOfType(self: *Node, ty: Type) !?*Node {
     switch (self.type) {
         inline .document, .element => {
@@ -61,6 +86,15 @@ pub fn lastChildOfType(self: *Node, ty: Type) !?*Node {
     }
 }
 
+/// Finds the first child of a specific type.
+///
+/// Searches forward through the children to find the first child
+/// of the specified type.
+///
+/// Args:
+///   ty: The node type to search for
+/// Returns: Pointer to the first matching child, or null if none found
+/// Errors: InvalidOperation if this node type cannot have children
 pub fn firstChildOfType(self: *Node, ty: Type) !?*Node {
     switch (self.type) {
         inline .document, .element => {
@@ -211,11 +245,22 @@ pub const Parameter = struct {
     }
 };
 
+/// Iterator for traversing child nodes.
+///
+/// Provides sequential access to child nodes, optionally filtered by type.
+/// Create using the `iterator()` method on a node.
 pub const Iterator = struct {
     type: ?Type = null,
     node: Node,
     index: usize,
 
+    /// Returns the next child node in the iteration.
+    ///
+    /// If a type filter was specified when creating the iterator, only
+    /// nodes of that type will be returned. Returns null when all children
+    /// have been processed.
+    ///
+    /// Returns: The next child Node or null if iteration is complete
     pub fn next(self: *Iterator) ?Node {
         if (self.index >= self.node.children.items.len) return null;
         const child = self.node.children.items[self.index];
@@ -229,11 +274,23 @@ pub const Iterator = struct {
         return child;
     }
 
+    /// Resets the iterator to the beginning.
+    ///
+    /// After calling this, the next call to `next()` will return the first
+    /// child again. Useful for making multiple passes over the children.
     pub fn reset(self: *Iterator) void {
         self.index = 0;
     }
 };
 
+/// Creates an iterator for this node's children.
+///
+/// The iterator will traverse all children in order, optionally filtered
+/// by the specified type.
+///
+/// Args:
+///   opts: Configuration options including optional type filter
+/// Returns: A new Iterator for the children
 pub fn iterator(self: Node, opts: struct { type: ?Type = null }) Iterator {
     return Iterator{
         .type = opts.type,
