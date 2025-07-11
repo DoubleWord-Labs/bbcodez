@@ -5,6 +5,7 @@
 //! Each node may have children, parameters, and type-specific data.
 
 const Node = @This();
+const logger = std.log.scoped(.bbcodez_node);
 
 pub const Type = enum {
     text,
@@ -159,6 +160,8 @@ pub fn getValue(self: Node) !?[]const u8 {
     if (self.type == .element) {
         return self.value.element.value;
     }
+
+    logger.err("Invalid node type. Node: {} {}", .{ self.type, self });
 
     return error.InvalidNodeType;
 }
