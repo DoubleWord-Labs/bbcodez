@@ -548,22 +548,29 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
     }
 
     if (parsed.locations.items.len > 0) {
-        var i: usize = parsed.locations.items.len - 1;
-        while (i > 0) : (i -= 1) {
-            const this = parsed.locations.items[i];
-            var prev = parsed.locations.items[i - 1];
+        var read_index: usize = 0;
+        var write_index: usize = 0;
 
-            if (this.type == .text and prev.type == .text) {
-                prev.base.end = this.base.end;
+        while (read_index < parsed.locations.items.len) : ({
+            write_index += 1;
+            read_index += 1;
+        }) {
+            var current_token = parsed.locations.items[read_index];
 
-                try parsed.locations.replaceRange(allocator, i - 1, 2, &[_]TokenResult.TokenLocation{prev});
+            if (current_token.type == .text) {
+                var end_pos = current_token.base.end;
 
-                i -= 1;
-                if (i == 0) {
-                    break;
+                while (read_index + 1 < parsed.locations.items.len and parsed.locations.items[read_index + 1].type == .text) : (read_index += 1) {
+                    end_pos = parsed.locations.items[read_index + 1].base.end;
                 }
+
+                current_token.base.end = end_pos;
             }
+
+            parsed.locations.items[write_index] = current_token;
         }
+
+        parsed.locations.items.len = write_index;
     }
 
     return parsed;
