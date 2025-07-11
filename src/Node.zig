@@ -223,7 +223,7 @@ pub fn print(self: Node, writer: anytype, depth: usize) !void {
     }
 
     if (has_children) {
-        var it = self.iterator();
+        var it = self.iterator(.{});
         while (it.next()) |node| {
             try node.print(writer, depth + 1);
         }
