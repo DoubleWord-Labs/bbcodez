@@ -548,32 +548,36 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
     }
 
     if (parsed.locations.items.len > 0) {
-        var read_index: usize = 0;
-        var write_index: usize = 0;
-
-        while (read_index < parsed.locations.items.len) : ({
-            write_index += 1;
-            read_index += 1;
-        }) {
-            var current_token = parsed.locations.items[read_index];
-
-            if (current_token.type == .text) {
-                var end_pos = current_token.base.end;
-
-                while (read_index + 1 < parsed.locations.items.len and parsed.locations.items[read_index + 1].type == .text) : (read_index += 1) {
-                    end_pos = parsed.locations.items[read_index + 1].base.end;
-                }
-
-                current_token.base.end = end_pos;
-            }
-
-            parsed.locations.items[write_index] = current_token;
-        }
-
-        parsed.locations.items.len = write_index;
+        compactTextTokens(&parsed);
     }
 
     return parsed;
+}
+
+fn compactTextTokens(parsed: *TokenResult) void {
+    var read_index: usize = 0;
+    var write_index: usize = 0;
+
+    while (read_index < parsed.locations.items.len) : ({
+        write_index += 1;
+        read_index += 1;
+    }) {
+        var current_token = parsed.locations.items[read_index];
+
+        if (current_token.type == .text) {
+            var end_pos = current_token.base.end;
+
+            while (read_index + 1 < parsed.locations.items.len and parsed.locations.items[read_index + 1].type == .text) : (read_index += 1) {
+                end_pos = parsed.locations.items[read_index + 1].base.end;
+            }
+
+            current_token.base.end = end_pos;
+        }
+
+        parsed.locations.items[write_index] = current_token;
+    }
+
+    parsed.locations.items.len = write_index;
 }
 
 test "basic tokenization" {
