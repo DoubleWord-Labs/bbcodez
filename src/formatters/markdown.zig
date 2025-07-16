@@ -393,6 +393,11 @@ test render {
     ;
 
     try testing.expectEqualStrings(expected_markdown, out_buffer.items);
+
+    try std.fs.cwd().writeFile(.{
+        .sub_path = "snapshots/md/basic.md",
+        .data = out_buffer.items,
+    });
 }
 
 const Allocator = std.mem.Allocator;

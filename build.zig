@@ -72,6 +72,24 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    const diff = b.addSystemCommand(&.{
+        "git",
+        "diff",
+        "--cached", // see git_add comment
+        "--exit-code",
+    });
+    diff.addDirectoryArg(b.path("snapshots/"));
+
+    test_step.dependOn(&diff.step);
+
+    const git_add = b.addSystemCommand(&.{
+        "git",
+        "add",
+        "snapshots/",
+    });
+
+    diff.step.dependOn(&git_add.step);
 }
 
 const std = @import("std");
