@@ -368,36 +368,94 @@ test render {
     var document = try Document.loadFromBuffer(testing.allocator, bbcode_document, .{});
     defer document.deinit();
 
-    var out_buffer = std.ArrayListUnmanaged(u8){};
-    defer out_buffer.deinit(testing.allocator);
+    var file = try std.fs.cwd().createFile("snapshots/md/basic.md", .{});
+    defer file.close();
 
-    try renderDocument(testing.allocator, document, out_buffer.writer(testing.allocator).any(), .{});
+    try renderDocument(testing.allocator, document, file.writer().any(), .{});
+}
 
-    const expected_markdown =
-        \\**Hello, World!**
-        \\
-        \\*This is an italicized text*
-        \\
-        \\Underlined text
-        \\
-        \\[Link](https://example.com)
-        \\
-        \\[Email](mailto:user@example.com)
-        \\
-        \\`This is a code block`
-        \\
-        \\1. one
-        \\2. two
-        \\3. three
-        \\
-    ;
+test "single lines" {
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[b]hello, world![/b]", .{});
+        defer document.deinit();
 
-    try testing.expectEqualStrings(expected_markdown, out_buffer.items);
+        var file = try std.fs.cwd().createFile("snapshots/md/single_line_bold.md", .{});
+        defer file.close();
 
-    try std.fs.cwd().writeFile(.{
-        .sub_path = "snapshots/md/basic.md",
-        .data = out_buffer.items,
-    });
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
+
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[email=user@example.com]Email[/email]", .{});
+        defer document.deinit();
+
+        var file = try std.fs.cwd().createFile("snapshots/md/single_line_email.md", .{});
+        defer file.close();
+
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
+
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[url=https://example.com]Link[/url]", .{});
+        defer document.deinit();
+
+        var file = try std.fs.cwd().createFile("snapshots/md/single_line_url.md", .{});
+        defer file.close();
+
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
+
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[code]code[/code]", .{});
+        defer document.deinit();
+
+        var file = try std.fs.cwd().createFile("snapshots/md/single_line_code.md", .{});
+        defer file.close();
+
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
+
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[i]italic[/i]", .{});
+        defer document.deinit();
+
+        var file = try std.fs.cwd().createFile("snapshots/md/single_line_italic.md", .{});
+        defer file.close();
+
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
+
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[b]Hello[/b], world! [i]italic[/i] [u]underline[/u] [s]strike[/s]", .{});
+        defer document.deinit();
+
+        var file = try std.fs.cwd().createFile("snapshots/md/single_line_mixed.md", .{});
+        defer file.close();
+
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
+}
+
+test "lists" {
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[list][*]item 1[*]item 2[/list]", .{});
+        defer document.deinit();
+
+        var file = try std.fs.cwd().createFile("snapshots/md/single_line_list.md", .{});
+        defer file.close();
+
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
+
+    {
+        var document = try Document.loadFromBuffer(testing.allocator, "[list]\n[*] item 1\n[*] item 2\n[/list]", .{});
+        defer document.deinit();
+
+        var file = try std.fs.cwd().createFile("snapshots/md/multi_line_list.md", .{});
+        defer file.close();
+
+        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    }
 }
 
 const Allocator = std.mem.Allocator;
