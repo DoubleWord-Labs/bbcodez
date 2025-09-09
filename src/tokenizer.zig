@@ -268,9 +268,9 @@ pub const TokenResult = struct {
 /// Returns: TokenResult containing all parsed tokens
 /// Errors: OutOfMemory if allocation fails during tokenization
 pub fn tokenizeBuffer(allocator: std.mem.Allocator, buffer: []const u8, options: Options) !TokenResult {
-    var fbs = std.io.fixedBufferStream(buffer);
-
-    var tokenizer = try tokenize(allocator, fbs.reader().any(), options);
+    var fixed_reader = std.io.Reader.fixed(buffer);
+    
+    var tokenizer = try tokenize(allocator, &fixed_reader, options);
     try tokenizer.buffer.ensureTotalCapacity(allocator, buffer.len);
 
     return tokenizer;
@@ -383,7 +383,7 @@ fn getTagName(tag: []const u8) []const u8 {
 ///   options: Tokenization configuration options
 /// Returns: TokenResult containing all parsed tokens
 /// Errors: OutOfMemory if allocation fails, or any reader errors
-pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options: Options) !TokenResult {
+pub fn tokenize(allocator: std.mem.Allocator, reader: *std.io.Reader, options: Options) !TokenResult {
     var state: State = .text;
     var start: usize = 0;
     var last_byte: u8 = 0;
@@ -408,11 +408,11 @@ pub fn tokenize(allocator: std.mem.Allocator, reader: std.io.AnyReader, options:
     while (true) {
         current = parsed.buffer.items.len;
 
-        var byte = reader.readByte() catch break;
+        var byte = reader.takeByte() catch break;
 
         if (isEscapeChar(byte)) {
             // look ahead to check if next byte is a valid escape sequence
-            const next_byte = reader.readByte() catch {
+            const next_byte = reader.takeByte() catch {
                 try parsed.buffer.append(allocator, byte);
                 break;
             };

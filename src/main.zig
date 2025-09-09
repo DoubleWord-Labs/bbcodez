@@ -58,7 +58,7 @@ fn processConfig() !void {
             input_file = try cwd().openFile(config.input.?, .{});
         },
         .stdin => {
-            input_file = std.io.getStdIn();
+            input_file = std.fs.File.stdin();
         },
     }
 
@@ -67,21 +67,24 @@ fn processConfig() !void {
             output_file = try cwd().openFile(config.output.?, .{});
         },
         .stdout => {
-            output_file = std.io.getStdOut();
+            output_file = std.fs.File.stdout();
         },
     }
 
-    const reader = input_file.reader().any();
-    const writer = output_file.writer().any();
+    var in_buf: [1024]u8 = undefined;
+    var out_buf: [1024]u8 = undefined;
+
+    var reader = input_file.reader(&in_buf).interface;
+    var writer = output_file.writer(&out_buf).interface;
 
     var arena = ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const document = try lib.load(allocator, reader, .{});
+    const document = try lib.load(allocator, &reader, .{});
     defer document.deinit();
 
-    try renderDocument(allocator, document, writer, .{});
+    try renderDocument(allocator, document, &writer, .{});
 }
 
 const cwd = std.fs.cwd;

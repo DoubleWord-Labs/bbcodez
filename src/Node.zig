@@ -161,7 +161,7 @@ pub fn getValue(self: Node) !?[]const u8 {
         return self.value.element.value;
     }
 
-    logger.err("Invalid node type. Node: {} {}", .{ self.type, self });
+    logger.err("Invalid node type. Node: {} {f}", .{ self.type, self });
 
     return error.InvalidNodeType;
 }
@@ -177,10 +177,7 @@ pub fn getValue(self: Node) !?[]const u8 {
 ///   options: Format options (unused)
 ///   writer: Output writer for the formatted text
 /// Errors: Any errors from the writer
-pub fn format(self: Node, fmt: anytype, options: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = options;
-
+pub fn format(self: Node, writer: anytype) !void {
     try self.print(writer, 0);
 }
 
@@ -212,13 +209,13 @@ pub fn print(self: Node, writer: anytype, depth: usize) !void {
         },
         .element => {
             if (has_children) {
-                try printer.printLine("<{s}>", .{try self.getName()});
+                try printer.printLine("<{s}>", .{self.getName() catch return error.WriteFailed});
             } else {
-                try printer.printLine("<{s} />", .{try self.getName()});
+                try printer.printLine("<{s} />", .{self.getName() catch return error.WriteFailed});
             }
         },
         .text => {
-            try printer.writeLine(try self.getText());
+            try printer.writeLine(self.getText() catch return error.WriteFailed);
         },
     }
 
@@ -231,7 +228,7 @@ pub fn print(self: Node, writer: anytype, depth: usize) !void {
         switch (self.type) {
             .document => try printer.writeLine("</document>"),
             .element => {
-                try printer.printLine("</{s}>", .{try self.getName()});
+                try printer.printLine("</{s}>", .{self.getName() catch return error.WriteFailed});
             },
             .text => {},
         }
@@ -241,13 +238,15 @@ pub fn print(self: Node, writer: anytype, depth: usize) !void {
 pub const NodePrinter = struct {
     const indent_size = 4;
 
-    writer: std.io.AnyWriter,
+    writer: *std.io.Writer,
     depth: usize = 0,
     indent: bool = true,
 
     pub fn write(self: NodePrinter, input: []const u8) !void {
         if (self.indent) {
-            try self.writer.writeByteNTimes(' ', indent_size * self.depth);
+            for (0..self.depth * indent_size) |_| {
+                try self.writer.writeByte(' ');
+            }
         }
 
         _ = try self.writer.write(input);
@@ -260,7 +259,9 @@ pub const NodePrinter = struct {
 
     pub fn print(self: NodePrinter, comptime fmt: []const u8, args: anytype) !void {
         if (self.indent) {
-            try self.writer.writeByteNTimes(' ', indent_size * self.depth);
+            for (0..self.depth * indent_size) |_| {
+                try self.writer.writeByte(' ');
+            }
         }
 
         try self.writer.print(fmt, args);

@@ -74,7 +74,7 @@ pub const WriteContext = struct {
     /// The document being rendered
     document: Document,
     /// Output writer for the generated Markdown
-    writer: std.io.AnyWriter,
+    writer: *std.io.Writer,
     /// Optional custom element handler function
     write_element_fn: ?WriteElementFunction = null,
     /// Optional user data for custom handlers
@@ -146,7 +146,7 @@ const element_map = std.StaticStringMap(MarkdownElement).initComptime(&.{
 ///   writer: Output writer for the Markdown text
 ///   options: Rendering configuration options
 /// Errors: Any writer errors or allocation failures during rendering
-pub fn renderDocument(allocator: Allocator, doc: Document, writer: std.io.AnyWriter, options: Options) !void {
+pub fn renderDocument(allocator: Allocator, doc: Document, writer: *std.io.Writer, options: Options) !void {
     var ctx: WriteContext = .{
         .allocator = allocator,
         .document = doc,
@@ -371,7 +371,10 @@ test render {
     var file = try std.fs.cwd().createFile("snapshots/md/basic.md", .{});
     defer file.close();
 
-    try renderDocument(testing.allocator, document, file.writer().any(), .{});
+    var buf: [1024]u8 = undefined;
+    var writer = file.writer(&buf).interface;
+
+    try renderDocument(testing.allocator, document, &writer, .{});
 }
 
 test "single lines" {
@@ -382,7 +385,9 @@ test "single lines" {
         var file = try std.fs.cwd().createFile("snapshots/md/single_line_bold.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 
     {
@@ -392,7 +397,9 @@ test "single lines" {
         var file = try std.fs.cwd().createFile("snapshots/md/single_line_email.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 
     {
@@ -402,7 +409,9 @@ test "single lines" {
         var file = try std.fs.cwd().createFile("snapshots/md/single_line_url.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 
     {
@@ -412,7 +421,9 @@ test "single lines" {
         var file = try std.fs.cwd().createFile("snapshots/md/single_line_code.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 
     {
@@ -422,7 +433,9 @@ test "single lines" {
         var file = try std.fs.cwd().createFile("snapshots/md/single_line_italic.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 
     {
@@ -432,7 +445,9 @@ test "single lines" {
         var file = try std.fs.cwd().createFile("snapshots/md/single_line_mixed.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 }
 
@@ -444,7 +459,9 @@ test "lists" {
         var file = try std.fs.cwd().createFile("snapshots/md/single_line_list.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 
     {
@@ -454,7 +471,9 @@ test "lists" {
         var file = try std.fs.cwd().createFile("snapshots/md/multi_line_list.md", .{});
         defer file.close();
 
-        try renderDocument(testing.allocator, document, file.writer().any(), .{});
+        var buf: [1024]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try renderDocument(testing.allocator, document, &writer, .{});
     }
 }
 

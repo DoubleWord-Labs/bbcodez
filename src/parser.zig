@@ -221,9 +221,9 @@ test "complex parsing" {
         \\[b]Note:[/b] Output displayed in the editor supports clickable [code skip-lint][url=address]text[/url][/code] tags. The [code skip-lint][url][/code] tag's [code]address[/code] value is handled by [method OS.shell_open] when clicked.
     ;
 
-    var fbs = std.io.fixedBufferStream(bbcode);
+    var fixed_reader = std.io.Reader.fixed(bbcode);
 
-    var tokens = try tokenizer.tokenize(testing.allocator, fbs.reader().any(), .{
+    var tokens = try tokenizer.tokenize(testing.allocator, &fixed_reader, .{
         .equals_required_in_parameters = false,
     });
     defer tokens.deinit(testing.allocator);
