@@ -269,7 +269,7 @@ pub const TokenResult = struct {
 /// Errors: OutOfMemory if allocation fails during tokenization
 pub fn tokenizeBuffer(allocator: std.mem.Allocator, buffer: []const u8, options: Options) !TokenResult {
     var fixed_reader = std.io.Reader.fixed(buffer);
-    
+
     var tokenizer = try tokenize(allocator, &fixed_reader, options);
     try tokenizer.buffer.ensureTotalCapacity(allocator, buffer.len);
 
