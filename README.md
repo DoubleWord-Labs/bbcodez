@@ -8,7 +8,7 @@ A Zig library for parsing and formatting BBCode.
 
 ## TODO
 
-- [ ] Markdown formatting (WIP)
+- [x] Markdown formatting (WIP)
 - [ ] HTML formatting
 
 ## Quick Start
@@ -16,7 +16,7 @@ A Zig library for parsing and formatting BBCode.
 Add bbcodez to your Zig project
 
 ```bash
-        zig fetch --save git+https://github.com/DoubleWord-Labs/bbcodez.git
+zig fetch --save git+https://github.com/DoubleWord-Labs/bbcodez.git
 ```
 
 ## Documentation
