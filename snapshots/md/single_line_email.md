@@ -1,0 +1,1 @@
+[Email](mailto:user@example.com)

@@ -372,9 +372,12 @@ test render {
     defer file.close();
 
     var buf: [1024]u8 = undefined;
-    var writer = file.writer(&buf).interface;
+    var file_writer = file.writer(&buf);
+    var writer = &file_writer.interface;
 
-    try renderDocument(testing.allocator, document, &writer, .{});
+    try renderDocument(testing.allocator, document, writer, .{});
+
+    try writer.flush();
 }
 
 test "single lines" {
@@ -386,8 +389,10 @@ test "single lines" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 
     {
@@ -398,8 +403,10 @@ test "single lines" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 
     {
@@ -410,8 +417,10 @@ test "single lines" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 
     {
@@ -422,8 +431,10 @@ test "single lines" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 
     {
@@ -434,8 +445,10 @@ test "single lines" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 
     {
@@ -446,8 +459,10 @@ test "single lines" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 }
 
@@ -460,8 +475,10 @@ test "lists" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 
     {
@@ -472,8 +489,10 @@ test "lists" {
         defer file.close();
 
         var buf: [1024]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try renderDocument(testing.allocator, document, &writer, .{});
+        var file_writer = file.writer(&buf);
+        var writer = &file_writer.interface;
+        try renderDocument(testing.allocator, document, writer, .{});
+        try writer.flush();
     }
 }
 
